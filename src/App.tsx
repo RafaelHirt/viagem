@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import QueryWizard, { initialFlight, initialHotel, type FlightDraft, type HotelDraft } from "./components/QueryWizard";
 import { findAirport, shortAirportLabel } from "./shared/airports";
-import SetupGuide from "./components/SetupGuide";
+import SettingsPanel from "./components/SettingsPanel";
 import AlertFields, { type AlertValues } from "./components/AlertFields";
 import { airportSetLabel } from "./shared/airport-options";
 import AirlineBrand from "./components/AirlineBrand";
@@ -34,7 +34,6 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Send,
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
@@ -1202,13 +1201,13 @@ Escolha uma viagem no mapa para começar.
                 <>
                   <div className="page-heading">
                     <div>
-                      <span className="eyebrow">PREPARE SEU PAINEL</span>
+                      <span className="eyebrow">DO SEU JEITO</span>
                       <h1>
-                        Preferências e acesso
+                        Configurações
                         <span className="heading-dot">.</span>
                       </h1>
                       <p>
-                        Seu acesso pessoal e o recebimento de avisos.
+                        Acompanhe seus avisos e veja o que já está disponível.
                       </p>
                     </div>
                     <button
@@ -1219,147 +1218,14 @@ Escolha uma viagem no mapa para começar.
                       Atualizar status
                     </button>
                   </div>
-                  <section className="panel notification-preferences"><Mail size={25} /><div><h2>O e-mail é cadastrado aqui na ferramenta</h2><p>Depois de buscar uma viagem, escolha Criar alerta desta busca e informe seu endereço.</p><p>{status.notifications.email ? 'O serviço de envio está conectado.' : 'O envio de e-mails ainda precisa ser ativado pelo responsável pela ferramenta.'}</p><button className="text-button" onClick={() => openCreate("flight")}>Buscar uma viagem<ArrowRight size={16} /></button></div></section>
-                  <details className="admin-settings"><summary>Administração da ferramenta</summary><p>Configurações de quem mantém o serviço. Quem pesquisa viagens não precisa criar conta na SerpApi.</p>
-                  <details className="settings-guide"><summary>Ajuda para configurar as conexões</summary><SetupGuide status={status} /></details>
-                  <div className="settings-notice">
-                    <ShieldCheck size={21} />
-                    <div>
-                      <strong>Suas credenciais ficam no servidor.</strong>
-                      <p>
-                        Configure as variáveis nas configurações do projeto no
-                        Netlify e faça um novo deploy. Nenhuma chave é
-                        armazenada no navegador.
-                      </p>
-                    </div>
-                  </div>
-                  <section className="settings-section">
-                    <div className="section-heading">
-                      <div>
-                        <h2>Fontes de preços</h2>
-                        <p>
-                          As consultas dependem das credenciais do fornecedor. A
-                          presença da chave não comprova acesso válido.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="connection-grid">
-                      <ConnectionCard
-                        icon={<Plane size={22} />}
-                        title="Passagens aéreas"
-                        provider={status.providers.flights.name}
-                        configured={status.providers.flights.configured}
-                        variables={["SERPAPI_API_KEY"]}
-                        description="Consulta à fonte configurada, com cobertura e condições apresentadas nos resultados. O acesso depende do plano contratado com o fornecedor."
-                      />
-                      <ConnectionCard
-                        icon={<Hotel size={22} />}
-                        title="Hotéis"
-                        provider={status.providers.hotels.name}
-                        configured={status.providers.hotels.configured}
-                        variables={[
-                          "BOOKING_API_TOKEN",
-                          "BOOKING_AFFILIATE_ID",
-                        ]}
-                        description={
-                          status.providers.hotels.configured
-                            ? "Credenciais da Booking presentes neste deploy. A disponibilidade do hotel e a validade do acesso são verificadas em uma consulta real."
-                            : "Booking foi escolhido como fonte. O catálogo de hotéis e o conector de preços ainda precisam ser conectados; preencher as credenciais sozinho não conclui essa integração."
-                        }
-                      />
-                    </div>
-                  </section>
-                  <section className="settings-section">
-                    <div className="section-heading">
-                      <div>
-                        <h2>Onde chegam as oportunidades</h2>
-                        <p>
-                          Use os dois canais ou escolha o que combina com sua
-                          rotina.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="connection-grid">
-                      <ConnectionCard
-                        icon={<Mail size={22} />}
-                        title="E-mail"
-                        provider="Alertas por e-mail"
-                        configured={status.notifications.email}
-                        variables={["RESEND_API_KEY", "ALERT_FROM_EMAIL"]}
-                        description="Cadastre o endereço de destino em cada monitor. O remetente precisa estar autorizado no serviço de envio."
-                      />
-                      <ConnectionCard
-                        icon={<Send size={22} />}
-                        title="Telegram"
-                        provider="Seu bot, seu chat"
-                        configured={status.notifications.telegram}
-                        variables={["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]}
-                        description="Conecte um bot e o chat de destino. Ative o Telegram nos monitores cujos alertas você deseja receber."
-                      />
-                    </div>
-                  </section>
-                  <section className="panel collection-settings">
-                    <span className="section-icon">
-                      <CalendarDays size={22} />
-                    </span>
-                    <div>
-                      <h2>Consultas agendadas</h2>
-                      <p>
-                        {status.collection?.enabled
-                          ? "Coleta habilitada em duas rodadas por dia, com limite de monitores por rodada para controlar o uso da API."
-                          : "A coleta automática está desativada por padrão para controlar custos. Buscas e consultas manuais ficam disponíveis após configurar a fonte."}
-                      </p>
-                      <div className="env-chips">
-                        <code>ENABLE_SCHEDULED_COLLECTION=true</code>
-                      </div>
-                    </div>
-                    <StatusPill
-                      configured={Boolean(status.collection?.enabled)}
-                      text={
-                        status.collection?.enabled
-                          ? "Habilitada"
-                          : "Aguardando ativação"
-                      }
-                    />
-                  </section>
-                  <section className="panel security-panel">
-                    <span className="section-icon">
-                      <ShieldCheck size={22} />
-                    </span>
-                    <div>
-                      <h2>Acesso ao painel</h2>
-                      <p>
-                        {status.authConfigured
-                          ? "O acesso está protegido por senha. Sessões e credenciais são verificadas no servidor."
-                          : "A autenticação precisa ser configurada antes de publicar o painel com acesso externo."}
-                      </p>
-                      <div className="env-chips">
-                        <code>DASHBOARD_PASSWORD</code>
-                      </div>
-                    </div>
-                    <StatusPill
-                      configured={status.authConfigured}
-                      text={
-                        status.authConfigured
-                          ? "Protegido"
-                          : "Configurar acesso"
-                      }
-                    />
-                  </section>
-                  <p className="settings-footnote">
-                    <Info size={15} />
-                    “Credenciais presentes” indica a presença das variáveis. A
-                    primeira consulta confirma se o fornecedor aceita o acesso e
-                    retorna ofertas.
-                  </p>
-                  </details>
+                  <SettingsPanel status={status} onSearch={() => openCreate("flight")} onAlerts={() => setTab("monitors")} />
                 </>
               )}
               <footer className="main-footer">
                 <span className="footer-brand">
                   partiu<span>.</span>
                 </span>
-                <span>O melhor preço abre novos caminhos.</span>
+                <span>Viaje por menos.</span>
                 <span>
                   Feito para a sua próxima viagem <Plane size={13} />
                 </span>
@@ -1483,46 +1349,6 @@ Escolha uma viagem no mapa para começar.
         </div>
       )}
     </div>
-  );
-}
-function ConnectionCard({
-  icon,
-  title,
-  provider,
-  configured,
-  variables,
-  description,
-}: {
-  icon: ReactNode;
-  title: string;
-  provider: string;
-  configured: boolean;
-  variables: string[];
-  description: string;
-}) {
-  return (
-    <article className="panel connection-card">
-      <div className="connection-card-top">
-        <span className="connection-icon">{icon}</span>
-        <StatusPill
-          configured={configured}
-          text={
-            configured ? "Credenciais presentes" : "Configuração necessária"
-          }
-        />
-      </div>
-      <h3>{title}</h3>
-      <span className="connection-provider">{provider}</span>
-      <p>{description}</p>
-      <div className="connection-env">
-        <span>VARIÁVEIS NO SERVIDOR</span>
-        <div className="env-chips">
-          {variables.map((variable) => (
-            <code key={variable}>{variable}</code>
-          ))}
-        </div>
-      </div>
-    </article>
   );
 }
 function HistoryItem({ observation, adults }: { observation: Observation; adults?: number }) {

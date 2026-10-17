@@ -1,5 +1,6 @@
 import { findAirport, isAirportInArea } from './airports'
 import type { TripLeg, TripPlan, TripPreview, TripStop } from './types'
+import { requiredCityCodes } from './trip-cities'
 
 /** Planning references, not a live timetable or proof of service on a travel date. */
 export const RAIL_SOURCES = {
@@ -63,35 +64,38 @@ export function railLeg(from: string, to: string): TripLeg | undefined {
 }
 function inAreas(city: TripStop, plan: TripPlan) { return plan.areas.some(area => isAirportInArea(findAirport(city.airportCode)!, area)) }
 export function railConnections(plan: TripPlan): TripStop[] {
-  const city = railCity(plan.requiredAirport || plan.startAirport)
+  const city = railCity(requiredCityCodes(plan)[0])
   if (!city) return []
   return RAIL_CITIES.filter(next => inAreas(next,plan) && (railLeg(city.airportCode,next.airportCode)?.maxMinutes ?? Infinity) <= plan.maxLegHours*60)
 }
-interface Path { stops: TripStop[]; countries: string[]; mask: number; required: boolean; score: number }
+interface Path { stops: TripStop[]; countries: string[]; mask: number; required: number; score: number }
 const countBits = (value:number) => value.toString(2).replaceAll('0','').length
 
 /** Bounded graph search: only listed edges; every edge obeys the selected upper bound. */
 export function railTripOptions(plan: TripPlan, entryCode?: string, exitCode?: string, limit = 3): TripPreview[] {
   if (plan.startAirport && entryCode && plan.startAirport !== entryCode) return []
-  const required = railCity(plan.requiredAirport || plan.startAirport)
-  if ((plan.requiredAirport || plan.startAirport) && !required) return []
+  const requiredCodes = requiredCityCodes(plan)
+  const required = requiredCodes.flatMap(code => railCity(code) || [])
+  if (required.length !== requiredCodes.length) return []
+  const requiredMask = (city:TripStop) => { const index=required.indexOf(city); return index<0 ? 0 : 1<<index }
+  const fullRequiredMask = (1<<required.length)-1
   const entry = railCity(entryCode || plan.startAirport), exit = railCity(exitCode)
   if ((entryCode && !entry) || (exitCode && !exit)) return []
   const nodes = RAIL_CITIES.filter(city => inAreas(city,plan))
-  if ((required && !nodes.includes(required)) || (entry && !nodes.includes(entry)) || (exit && !nodes.includes(exit))) return []
-  const requiredCountries = new Set([...plan.countryCodes, ...(required ? [required.countryCode] : []), ...(entry ? [entry.countryCode] : []), ...(exit ? [exit.countryCode] : [])])
+  if (required.some(city=>!nodes.includes(city)) || (entry && !nodes.includes(entry)) || (exit && !nodes.includes(exit))) return []
+  const requiredCountries = new Set([...plan.countryCodes, ...required.map(city=>city.countryCode), ...(entry ? [entry.countryCode] : []), ...(exit ? [exit.countryCode] : [])])
   if (requiredCountries.size > plan.countryCount) return []
   const fixed = !plan.flexibleOrder && plan.countryCodes.length === plan.countryCount
   const mask = (city:TripStop) => plan.areas.reduce((value,area,index)=>isAirportInArea(findAirport(city.airportCode)!,area)?value|(1<<index):value,0)
   const fullMask = (1<<plan.areas.length)-1
   const leg = (a:TripStop,b:TripStop) => { const result=railLeg(a.airportCode,b.airportCode);return result && result.maxMinutes <= plan.maxLegHours*60 ? result : undefined }
-  let paths: Path[] = (entry ? [entry] : nodes).filter(city=>!fixed||city.countryCode===plan.countryCodes[0]).map(city=>({stops:[city],countries:[city.countryCode],mask:mask(city),required:!required||city===required,score:0}))
+  let paths: Path[] = (entry ? [entry] : nodes).filter(city=>!fixed||city.countryCode===plan.countryCodes[0]).map(city=>({stops:[city],countries:[city.countryCode],mask:mask(city),required:requiredMask(city),score:0}))
   const found: Path[] = []
   for(let depth=1;depth<=10 && paths.length;depth++) {
     const next:Path[]=[]
     for(const path of paths) {
       const last=path.stops.at(-1)!
-      if(path.countries.length===plan.countryCount && path.mask===fullMask && path.required && plan.countryCodes.every(country=>path.countries.includes(country))) {
+      if(path.countries.length===plan.countryCount && path.mask===fullMask && path.required===fullRequiredMask && plan.countryCodes.every(country=>path.countries.includes(country))) {
         if(!exit || last===exit) found.push(path)
         else {
           // Closing a tour may revisit a city, but may not add an unrequested country or an over-limit edge.
@@ -120,11 +124,11 @@ export function railTripOptions(plan: TripPlan, entryCode?: string, exitCode?: s
         if(fixed && isNew && city.countryCode!==plan.countryCodes[path.countries.length])continue
         if(fixed && !plan.countryCodes.includes(city.countryCode))continue
         if(exit && city===exit && path.countries.length+(isNew?1:0)<plan.countryCount)continue
-        next.push({stops:[...path.stops,city],countries:isNew?[...path.countries,city.countryCode]:path.countries,mask:path.mask|mask(city),required:path.required||city===required,score:path.score+edge.maxMinutes+90})
+        next.push({stops:[...path.stops,city],countries:isNew?[...path.countries,city.countryCode]:path.countries,mask:path.mask|mask(city),required:path.required|requiredMask(city),score:path.score+edge.maxMinutes+90})
       }
     }
     const seen=new Set<string>()
-    paths=next.sort((a,b)=>Number(b.required)-Number(a.required)||b.countries.length-a.countries.length||countBits(b.mask)-countBits(a.mask)||a.score-b.score).filter(path=>{const key=[path.stops.at(-1)!.airportCode,[...path.countries].sort().join(','),path.mask,path.required,path.stops.map(s=>s.airportCode).sort().join(',')].join('|');if(seen.has(key))return false;seen.add(key);return true}).slice(0,256)
+    paths=next.sort((a,b)=>countBits(b.required)-countBits(a.required)||b.countries.length-a.countries.length||countBits(b.mask)-countBits(a.mask)||a.score-b.score).filter(path=>{const key=[path.stops.at(-1)!.airportCode,[...path.countries].sort().join(','),path.mask,path.required,path.stops.map(s=>s.airportCode).sort().join(',')].join('|');if(seen.has(key))return false;seen.add(key);return true}).slice(0,256)
   }
   const signatures=new Set<string>(), candidates:Path[]=[]
   for(const path of found.sort((a,b)=>a.score-b.score)) {
@@ -132,7 +136,7 @@ export function railTripOptions(plan: TripPlan, entryCode?: string, exitCode?: s
     if(signatures.has(key))continue
     signatures.add(key);candidates.push(path)
   }
-  const anchor=required||entry
+  const anchor=required[0]||entry
   const sector=(path:Path) => {
     if(!anchor)return [...path.countries].sort().join(',')
     const others=path.stops.filter(city=>city!==anchor)

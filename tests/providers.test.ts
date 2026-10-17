@@ -410,4 +410,22 @@ describe('exact dates with a mandatory city and free entry',()=>{
     expect(result.offers.length).toBeGreaterThan(0);expect(result.coverage.queries).toBeLessThanOrEqual(3);
     for(const offer of result.offers)expect(offer.tripPreview!.stops.some(stop=>stop.city==='Paris')).toBe(true)
   })
+  it('requires both mandatory cities in every priced route and orders only the air fares actually returned',async()=>{
+    const tripPlan={requiredAirports:['CDG','MXP'],countryCount:3,areas:[{lat:48.8566,lon:2.3522,radiusKm:900}],countryCodes:[],transport:'train' as const,maxLegHours:3,flexibleOrder:true}
+    vi.mocked(fetch).mockImplementation(async input=>{
+      const params=new URL(String(input)).searchParams
+      expect(params.get('adults')).toBe('2')
+      const legs=params.has('multi_city_json')?JSON.parse(params.get('multi_city_json')!):[{arrival_id:params.get('arrival_id')}]
+      return response({search_parameters:{adults:2,currency:'BRL'},best_flights:[{price:legs[0].arrival_id==='MXP'?4000:5000,flights:[{departure_airport:{id:'GYN',time:'2027-03-10 09:00'},arrival_airport:{id:legs[0].arrival_id}}]}]})
+    })
+    const result=await explore('flight',{origin:'GYN',destination:'Roteiro por 3 países',minDays:11,maxDays:11,horizonMonths:12,adults:2,allowOpenJaw:true,departureDate:'2027-03-10',returnDate:'2027-03-21',tripPlan})
+    expect(result.offers.length).toBeGreaterThan(0)
+    for(const offer of result.offers) {
+      expect(offer.tripPreview!.stops.map(stop=>stop.city)).toEqual(expect.arrayContaining(['Paris','Milão']))
+      expect(offer.tripPreview!.countryCount).toBe(3)
+      expect(offer.tripPreview!.legs.every(leg=>leg.maxMinutes<=180)).toBe(true)
+    }
+    expect(result.offers.map(offer=>offer.price)).toEqual(result.offers.map(offer=>offer.price).sort((a,b)=>a-b))
+    expect(result.coverage.complete).toBe(false);expect(result.coverage.description).toContain('trens e hotéis não estão cotados')
+  })
 })

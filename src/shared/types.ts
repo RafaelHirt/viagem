@@ -10,6 +10,8 @@ export interface TripPlan {
   /** Legacy fixed entry, preserved when reading old alerts. */
   startAirport?: string
   requiredAirport?: string
+  /** Mandatory cities, in any position. The single-city field remains readable for old alerts. */
+  requiredAirports?: string[]
   countryCount: number
   areas: GeoArea[]
   countryCodes: string[]

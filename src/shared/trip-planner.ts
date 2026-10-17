@@ -1,5 +1,6 @@
 import { AIRPORTS, findAirport, isAirportInArea, type Airport } from './airports'
 import { railTripOptions } from './rail-network'
+import { requiredCityCodes, tripCityCode, tripCityName } from './trip-cities'
 import type { GeoArea, TravelMode, TripLeg, TripPlan, TripPreview, TripStop } from './types'
 
 export const TRAVEL_MODES: Record<TravelMode, string> = { train: 'Trem', car: 'Carro', flight: 'Avião' }
@@ -13,9 +14,19 @@ export function withTripStart(plan: TripPlan, code: string): TripPlan {
     flexibleOrder: plan.countryCodes[0] === airport.countryCode ? plan.flexibleOrder : true }
 }
 export function withRequiredCity(plan: TripPlan, code: string): TripPlan {
-  const airport = findAirport(code)
-  if (!airport) return { ...plan, requiredAirport: undefined, startAirport: undefined }
-  return { ...plan, startAirport: undefined, requiredAirport: airport.code, areas: [{ lat: airport.lat, lon: airport.lon, radiusKm: plan.areas[0]?.radiusKm ?? 800 }, ...plan.areas.slice(1)] }
+  return withRequiredCities(plan, code ? [code] : [])
+}
+export function withRequiredCities(plan: TripPlan, codes: string[]): TripPlan {
+  const cities = [...new Set(codes.map(tripCityCode))].filter(code => findAirport(code)).slice(0, 5)
+  const airports = cities.map(code => findAirport(code)!)
+  const areas = plan.areas.length ? [...plan.areas] : airports.length ? [{ lat: airports[0].lat, lon: airports[0].lon, radiusKm: 800 }] : []
+  for (const airport of airports) {
+    if (areas.some(area => isAirportInArea(airport, area))) continue
+    const radiusKm = Math.ceil(distanceKm(areas[0], airport) + 50)
+    if (radiusKm <= 5000) areas[0] = { ...areas[0], radiusKm: Math.max(areas[0].radiusKm, radiusKm) }
+    else if (areas.length < plan.countryCount) areas.push({ lat: airport.lat, lon: airport.lon, radiusKm: 125 })
+  }
+  return { ...plan, startAirport: undefined, requiredAirport: cities[0], requiredAirports: cities.length > 1 ? cities : undefined, areas }
 }
 export function distanceKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
   const rad = (d: number) => d * Math.PI / 180
@@ -44,17 +55,16 @@ export function countriesInAreas(areas: GeoArea[]): { code: string; name: string
   return [...countries].map(([code, name]) => ({ code, name })).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
 }
 
-const CITY_NAMES: Record<string, string> = { CDG: 'Paris', ORY: 'Paris', BRU: 'Bruxelas', AMS: 'Amsterdã', LHR: 'Londres', LGW: 'Londres', MAD: 'Madri', LIS: 'Lisboa', FCO: 'Roma', VIE: 'Viena', BER: 'Berlim' }
-const stop = (airport: Airport): TripStop => ({ airportCode: airport.code, city: CITY_NAMES[airport.code] || airport.city, country: airport.country, countryCode: airport.countryCode, lat: airport.lat, lon: airport.lon })
+const stop = (airport: Airport): TripStop => ({ airportCode: airport.code, city: tripCityName(airport.code), country: airport.country, countryCode: airport.countryCode, lat: airport.lat, lon: airport.lon })
 interface Path { airports: Airport[]; countries: Set<string>; covered: number; score: number }
 const BEAM_WIDTH = 96
 
 /** Bounded geographic preview; neither exhaustive nor an optimization of trip cost. */
 export function previewTrip(plan: TripPlan, entryCode?: string, exitCode?: string): TripPreview {
   const fail = (status: TripPreview['status'], message: string): TripPreview => ({ status, message, stops: [], legs: [], countryCount: 0, transport: plan.transport })
-  if (plan.transport === 'train' && (plan.requiredAirport || plan.startAirport || plan.areas.some(area => area.lat > 30 && area.lat < 72 && area.lon > -25 && area.lon < 45))) {
+  if (plan.transport === 'train' && (requiredCityCodes(plan).length || plan.areas.some(area => area.lat > 30 && area.lat < 72 && area.lon > -25 && area.lon < 45))) {
     if (!plan.areas.length) return fail('empty', 'Marque a área para explorar as cidades do roteiro.')
-    return railTripOptions(plan, entryCode, exitCode, 1)[0] || fail('no-route', 'Não encontramos uma sequência na rede de referência com estes países, áreas e tempo por trecho. Ajuste o limite ou as áreas; isso não comprova ausência de trens reais.')
+    return railTripOptions(plan, entryCode, exitCode, 1)[0] || fail('no-route', 'Não encontramos uma sequência na rede de referência que inclua todas as cidades obrigatórias, estes países, áreas e tempo por trecho. Ajuste as escolhas; isso não comprova ausência de trens reais.')
   }
   if (!plan.areas.length) return fail('empty', 'Marque uma ou mais áreas para descobrir os países e visualizar um roteiro.')
   const available = AIRPORTS.filter(airport => airportInTrip(airport, plan))
@@ -69,7 +79,7 @@ export function previewTrip(plan: TripPlan, entryCode?: string, exitCode?: strin
   const sameCountryReturn = entry && exit && entry.countryCode === exit.countryCode
   if (fixed && entry && entry.countryCode !== plan.countryCodes[0]) return fail('no-route', 'A chegada não corresponde ao primeiro país da ordem escolhida.')
 
-  // Up to one reference airport per country/area, plus the actual fare's ends.
+  // Up to one reference airport per country/area, plus mandatory cities and fare ends.
   // This bounds work without claiming that all cities or routes were searched.
   const nearest = new Map<string, Airport>()
   for (const airport of available) plan.areas.forEach((area, index) => {
@@ -77,9 +87,12 @@ export function previewTrip(plan: TripPlan, entryCode?: string, exitCode?: strin
     const key = `${airport.countryCode}:${index}`, previous = nearest.get(key)
     if (!previous || distanceKm(airport, area) < distanceKm(previous, area)) nearest.set(key, airport)
   })
-  const requiredCity = plan.requiredAirport ? findAirport(plan.requiredAirport) : undefined
-  let nodes = [...new Map([...nearest.values(), ...(requiredCity ? [requiredCity] : []), ...(entry ? [entry] : []), ...(exit ? [exit] : [])].map(airport => [airport.code, airport])).values()]
-  const mandatory = new Set([...(requiredCity ? [requiredCity.countryCode] : []), ...plan.countryCodes, ...(exit ? [exit.countryCode] : [])])
+  const requiredCodes = requiredCityCodes(plan)
+  const requiredCities = requiredCodes.flatMap(code => findAirport(code) || [])
+  if (requiredCities.length !== requiredCodes.length || requiredCities.some(city => !airportInTrip(city, plan))) return fail('no-route', 'Todas as cidades obrigatórias precisam estar nas áreas do roteiro.')
+  let nodes = [...new Map([...nearest.values(), ...requiredCities, ...(entry ? [entry] : []), ...(exit ? [exit] : [])].map(airport => [airport.code, airport])).values()]
+  const mandatory = new Set([...requiredCities.map(city => city.countryCode), ...plan.countryCodes, ...(exit ? [exit.countryCode] : []), ...(entry ? [entry.countryCode] : [])])
+  if (mandatory.size > plan.countryCount) return fail('no-route', 'As cidades e os países obrigatórios ultrapassam a quantidade de países escolhida.')
   const allowedCountries = [...countries].sort((a, b) => Number(mandatory.has(b)) - Number(mandatory.has(a)) ||
     Math.min(...nodes.filter(n => n.countryCode === a).map(n => Math.min(...plan.areas.map(area => distanceKm(n, area))))) -
     Math.min(...nodes.filter(n => n.countryCode === b).map(n => Math.min(...plan.areas.map(area => distanceKm(n, area)))))).slice(0, 24)
@@ -90,27 +103,36 @@ export function previewTrip(plan: TripPlan, entryCode?: string, exitCode?: strin
   const withinLimit = (a: Airport, b: Airport) => estimateLeg(a, b, plan.transport).maxMinutes <= plan.maxLegHours * 60
   let paths: Path[] = (entry ? [entry] : nodes.filter(node => !fixed || node.countryCode === plan.countryCodes[0]))
     .map(airport => ({ airports: [airport], countries: new Set([airport.countryCode]), covered: covered(airport), score: 0 }))
-  for (let depth = 1; depth < plan.countryCount; depth++) {
+  const requiredCount = (path:Path) => requiredCodes.filter(code => path.airports.some(city => tripCityCode(city.code) === code)).length
+  const valid:Path[] = []
+  for (let depth = 0; depth < plan.countryCount + requiredCodes.length + 2 && paths.length; depth++) {
     const next: Path[] = []
-    for (const path of paths) for (const node of nodes) {
-      if (path.countries.has(node.countryCode) || (fixed && node.countryCode !== plan.countryCodes[depth])) continue
-      if (exit && !sameCountryReturn && (depth === plan.countryCount - 1 ? node.code !== exit.code : node.countryCode === exit.countryCode)) continue
+    for (const path of paths) {
       const previous = path.airports.at(-1)!
-      if (!withinLimit(previous, node)) continue
-      const visited = new Set([...path.countries, node.countryCode])
-      if ([...mandatory].filter(code => !visited.has(code)).length > plan.countryCount - depth - 1) continue
-      next.push({ airports: [...path.airports, node], countries: visited, covered: path.covered | covered(node), score: path.score + distanceKm(previous, node) })
+      const complete = requiredCount(path) === requiredCodes.length && path.countries.size === plan.countryCount && path.covered === fullMask && [...mandatory].every(code => path.countries.has(code))
+      if (complete && (!exit || ((!fixed || sameCountryReturn || exit.countryCode === plan.countryCodes.at(-1)) && (previous === exit || withinLimit(previous, exit))))) {
+        valid.push(exit && previous !== exit ? { ...path, airports: [...path.airports, exit], score: path.score + distanceKm(previous, exit) } : path)
+        continue
+      }
+      for (const node of nodes) {
+        if (path.airports.includes(node)) continue
+        const isNew = !path.countries.has(node.countryCode)
+        if (isNew && path.countries.size >= plan.countryCount) continue
+        if (!isNew && !requiredCodes.includes(tripCityCode(node.code))) continue
+        if (fixed && (isNew ? node.countryCode !== plan.countryCodes[path.countries.size] : node.countryCode !== previous.countryCode)) continue
+        if (exit && !sameCountryReturn && node === exit && path.countries.size + (isNew ? 1 : 0) < plan.countryCount) continue
+        if (!withinLimit(previous, node)) continue
+        const visited = new Set([...path.countries, node.countryCode])
+        if ([...mandatory].filter(code => !visited.has(code)).length > plan.countryCount - visited.size) continue
+        next.push({ airports: [...path.airports, node], countries: visited, covered: path.covered | covered(node), score: path.score + distanceKm(previous, node) })
+      }
     }
-    // Prefer covering all marked areas before minimizing straight-line distance.
-    paths = next.sort((a, b) => bitCount(b.covered) - bitCount(a.covered) || a.score - b.score).slice(0, BEAM_WIDTH)
-    if (!paths.length) break
+    paths = next.sort((a, b) => requiredCount(b) - requiredCount(a) || bitCount(b.covered) - bitCount(a.covered) || a.score - b.score).slice(0, BEAM_WIDTH)
   }
-  const valid = paths.filter(path => (!requiredCity || path.airports.includes(requiredCity)) && path.countries.size === plan.countryCount && path.covered === fullMask && [...mandatory].every(code => path.countries.has(code)) &&
-    (!exit || !sameCountryReturn || withinLimit(path.airports.at(-1)!, exit)))
-    .sort((a, b) => a.score + (sameCountryReturn && exit ? distanceKm(a.airports.at(-1)!, exit) : 0) - b.score - (sameCountryReturn && exit ? distanceKm(b.airports.at(-1)!, exit) : 0))
+  valid.sort((a,b) => a.score-b.score)
   const best = valid[0]
   if (!best) return fail('no-route', 'Nenhuma combinação encontrada nesta prévia com o limite de tempo e os países escolhidos. Amplie o tempo por trecho, libere a ordem ou ajuste as áreas. Isso não comprova ausência de rotas reais.')
-  const itinerary = [...best.airports, ...(sameCountryReturn && exit ? [exit] : [])]
+  const itinerary = best.airports
   return { status: 'ready', transport: plan.transport, stops: itinerary.map(stop), legs: itinerary.slice(1).map((node, index) => estimateLeg(itinerary[index], node, plan.transport)), countryCount: best.countries.size,
     message: 'Prévia geográfica com cidades de referência. Tempos estimados por distância; serviços, conexões e preços internos não foram consultados.' }
 }

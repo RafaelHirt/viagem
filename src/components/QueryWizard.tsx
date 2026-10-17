@@ -7,6 +7,7 @@ import { flightPeriodLabel, weekdayLabel, flightWindow, sampleTravelDates } from
 import FlightPreferences from './FlightPreferences';
 import { findAirport, labelAirport, shortAirportLabel, REGIONS } from '../shared/airports';
 import { DEFAULT_TRIP, previewTrip } from '../shared/trip-planner';
+import { requiredCityCodes } from '../shared/trip-cities';
 import TripSummary from './TripSummary';
 import AirportAutocomplete from './AirportAutocomplete';
 import AirportAlternatives from './AirportAlternatives';
@@ -44,7 +45,7 @@ export default function QueryWizard({ mode, kind, onKindChange, flight, setFligh
         if (!findAirport(flight.origin)) message = 'Selecione seu aeroporto de partida na lista de cidades.';
         else if (flight.destinationMode === 'airport' && !findAirport(flight.arrivalAirport)) message = 'Selecione a cidade ou o aeroporto de chegada na lista.';
         else if (flight.destinationMode === 'map' && !flight.area && !REGIONS.some(region => region.label === flight.destination)) message = 'Marque uma área no mapa para escolher os aeroportos permitidos.';
-        else if (flight.destinationMode === 'trip' && (!(flight.tripPlan?.requiredAirport || flight.tripPlan?.startAirport) || previewTrip(flight.tripPlan).status !== 'ready')) message = !(flight.tripPlan?.requiredAirport || flight.tripPlan?.startAirport) ? 'Escolha a cidade obrigatória do roteiro.' : previewTrip(flight.tripPlan).message;
+        else if (flight.destinationMode === 'trip' && (!flight.tripPlan || !requiredCityCodes(flight.tripPlan).length || previewTrip(flight.tripPlan).status !== 'ready')) message = !flight.tripPlan || !requiredCityCodes(flight.tripPlan).length ? 'Escolha pelo menos uma cidade obrigatória do roteiro.' : previewTrip(flight.tripPlan).message;
       } else if (!hotel.propertyId) message = 'Selecione um hotel encontrado na Booking. O nome digitado sozinho ainda não confirma a propriedade.';
     }
     if (step === 1) {

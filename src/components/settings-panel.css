@@ -1,0 +1,32 @@
+.simple-settings { max-width:900px; }
+.settings-notifications { padding:28px; }
+.settings-notifications h2,.settings-follow-up h2 { font-size:20px; color:#254d40; margin:0 0 10px; }
+.settings-notifications > p,.settings-channel p,.settings-follow-up p,.settings-technical p { color:#53665d; font-size:14px; line-height:1.7; }
+.settings-channel { display:flex; align-items:flex-start; gap:16px; padding:24px 0; border-bottom:1px solid #e5ebe1; color:#176b56; }
+.settings-channel > svg { flex-shrink:0; margin-top:3px; }
+.settings-channel > div { flex:1; min-width:0; }
+.settings-channel h3 { font-size:16px; margin:0 0 7px; color:#254d40; }
+.settings-state { flex-shrink:0; border:1px solid #d5e1cf; border-radius:20px; padding:6px 10px; color:#53665d; font-size:12px; background:#f4f7ef; }
+.settings-notifications > button { margin-top:24px; }
+.settings-follow-up { display:flex; gap:16px; padding:26px; margin-top:20px; color:#176b56; }
+.settings-follow-up > svg { flex-shrink:0; }
+.settings-follow-up .text-button { margin-top:14px; }
+.settings-personal { display:flex; gap:10px; color:#53665d; font-size:13px; line-height:1.7; margin:24px 0; }
+.settings-personal svg { flex-shrink:0; margin-top:2px; }
+.settings-technical { border-top:1px solid #dfe7da; margin-top:28px; padding-top:20px; color:#53665d; }
+.settings-technical > summary,.settings-scheduler > summary { cursor:pointer; font-size:14px; padding:8px 0; }
+.settings-technical > p { margin:16px 0; }
+.settings-connection-summary { margin:20px 0; }
+.settings-connection-summary > div { display:flex; gap:20px; justify-content:space-between; padding:12px 0; border-bottom:1px solid #e5ebe1; font-size:14px; }
+.settings-connection-summary dt { font-weight:600; }
+.settings-connection-summary dd { text-align:right; margin:0; }
+.settings-scheduler { margin:20px 0; }
+.settings-scheduler code { overflow-wrap:anywhere; }
+@media(max-width:600px) {
+ .settings-notifications,.settings-follow-up { padding:20px; }
+ .settings-channel { flex-wrap:wrap; gap:10px; }
+ .settings-channel > div { flex-basis:calc(100% - 40px); }
+ .settings-state { margin-left:33px; }
+ .settings-connection-summary > div { flex-direction:column; gap:6px; }
+ .settings-connection-summary dd { text-align:left; }
+}

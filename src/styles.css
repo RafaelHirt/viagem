@@ -4806,11 +4806,6 @@ input::placeholder { color: #607268; opacity: 1; }
 .alert-fields .advanced-fields { margin-top: 0; }
 .alert-fields .advanced-fields .field-grid { margin-top: 18px; }
 .alert-fields .inline-note { margin: 0; }
-.notification-preferences { display: flex; align-items: flex-start; gap: 20px; padding: 26px; margin-bottom: 24px; color: #176b56; }
-.notification-preferences p { margin-top: 10px; color: #53665d; font-size: 14px; }
-.notification-preferences .text-button { margin-top: 12px; }
-.admin-settings > summary { cursor: pointer; padding: 18px 0; font-weight: 600; color: #344f42; }
-.admin-settings > p { color: #53665d; font-size: 14px; margin: 0 0 24px; }
 .login-card p, .login-card .field > span, .login-card form > .button, .login-footer { font-size: 14px; color: #53665d; }
 .login-card .field input { font-size: 16px; }
 .login-card form > .button { color: #fff; min-height: 48px; }
@@ -4822,7 +4817,6 @@ input::placeholder { color: #607268; opacity: 1; }
   .save-alert-panel .form-actions .button { flex: 1; }
   .search-recap { align-items: stretch; }
   .fare-amount > strong { font-size: 27px; }
-  .notification-preferences { padding: 20px; gap: 14px; }
 }
 .query-wizard .button, .query-wizard .wizard-actions .button { font-size: 14px; }
 .advanced-fields summary { font-size: 14px; color: #53665d; }

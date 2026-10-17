@@ -1,6 +1,7 @@
 import type { FlightQuery, GeoArea, HotelQuery, Monitor, Observation, TripPlan } from './types.ts'
 import { AIRPORTS, findAirport, isAirportInArea } from './airports.ts'
 import { matchesWeekdays, tripDays } from './flight-dates.ts'
+import { requiredCityCodes, tripCityCode, tripCityCountry } from './trip-cities.ts'
 export { AIRPORTS, findAirport } from './airports.ts'
 export type { Airport } from './airports.ts'
 
@@ -174,9 +175,18 @@ function optionalTripPlan(value: unknown): TripPlan | undefined {
   if (!flexibleOrder && plan.countryCodes.length !== countryCount) throw new Error('Escolha todos os países para fixar a ordem do roteiro.')
   const requiredAirport = optionalIata(plan.requiredAirport)
   if (requiredAirport && !findAirport(requiredAirport)) throw new Error('Selecione a cidade obrigatória na lista.')
+  let requiredAirports: string[] | undefined
+  if (plan.requiredAirports !== undefined) {
+    if (!Array.isArray(plan.requiredAirports) || !plan.requiredAirports.length || plan.requiredAirports.length > 5) throw new Error('Escolha de uma a cinco cidades obrigatórias.')
+    requiredAirports = plan.requiredAirports.map(code => tripCityCode(parseIata(code)))
+    if (requiredAirports.some(code => !findAirport(code)) || new Set(requiredAirports).size !== requiredAirports.length) throw new Error('Escolha cidades obrigatórias válidas e diferentes; aeroportos da mesma cidade contam uma vez.')
+    if (requiredAirport && !requiredAirports.includes(tripCityCode(requiredAirport))) throw new Error('A cidade obrigatória precisa estar na lista de cidades escolhidas.')
+  }
   const startAirport = optionalIata(plan.startAirport)
   if (startAirport && !findAirport(startAirport)) throw new Error('Selecione a primeira cidade do roteiro na lista de aeroportos.')
-  return { ...(requiredAirport ? { requiredAirport } : {}), ...(startAirport ? { startAirport } : {}), countryCount, areas, countryCodes: [...plan.countryCodes] as string[], transport: plan.transport as TripPlan['transport'], maxLegHours: plan.maxLegHours, flexibleOrder }
+  const cityCodes = requiredAirports || (requiredAirport ? [requiredAirport] : startAirport ? [startAirport] : [])
+  if (new Set([...plan.countryCodes, ...cityCodes.map(tripCityCountry)]).size > countryCount) throw new Error('As cidades e os países obrigatórios ultrapassam a quantidade de países escolhida.')
+  return { ...(requiredAirport ? { requiredAirport: tripCityCode(requiredAirport) } : {}), ...(requiredAirports ? { requiredAirports } : {}), ...(startAirport ? { startAirport } : {}), countryCount, areas, countryCodes: [...plan.countryCodes] as string[], transport: plan.transport as TripPlan['transport'], maxLegHours: plan.maxLegHours, flexibleOrder }
 }
 
 function optionalAirports(value: unknown, primary: string | undefined): string[] | undefined {
@@ -240,10 +250,10 @@ function flightQuery(value: unknown): FlightQuery {
   const tripPlan = optionalTripPlan(query.tripPlan)
   if (area && tripPlan) throw new Error('Escolha uma área simples ou um roteiro com vários países.')
   if (tripPlan?.startAirport && arrivalAirport && tripPlan.startAirport !== arrivalAirport) throw new Error('O aeroporto de chegada deve ser a primeira cidade do roteiro.')
-  for (const code of [...(arrivalAirports || [arrivalAirport]), ...(departureAirports || [departureAirport]), tripPlan?.startAirport, tripPlan?.requiredAirport].filter((code): code is string => Boolean(code))) {
+  for (const code of [...(arrivalAirports || [arrivalAirport]), ...(departureAirports || [departureAirport]), tripPlan?.startAirport, ...(tripPlan ? requiredCityCodes(tripPlan) : [])].filter((code): code is string => Boolean(code))) {
     const airport = findAirport(code)
     if (area && (!airport || !isAirportInArea(airport, area))) throw new Error('Os aeroportos de chegada e volta precisam estar dentro da área marcada.')
-    if (tripPlan && (!airport || !tripPlan.areas.some(area => isAirportInArea(airport, area)))) throw new Error('A primeira cidade e o aeroporto de volta precisam estar nas áreas do roteiro.')
+    if (tripPlan && (!airport || !tripPlan.areas.some(area => isAirportInArea(airport, area)))) throw new Error('As cidades obrigatórias e os aeroportos de chegada e volta precisam estar nas áreas do roteiro.')
   }
   return {
     origin: originAirports?.[0] || origin, ...(originAirports ? { originAirports } : {}), ...(arrivalAirports ? { arrivalAirports } : {}), ...(departureAirports ? { departureAirports } : {}),

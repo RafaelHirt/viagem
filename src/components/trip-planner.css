@@ -1,4 +1,11 @@
 .trip-planner { min-width: 0; }
+.trip-required-cities { display:flex; flex-wrap:wrap; gap:10px; margin:18px 0; }
+.trip-required-cities > span { display:inline-flex; align-items:center; gap:12px; background:#edf5e9; color:#244d38; border:1px solid #a4c3ad; border-radius:24px; padding:4px 6px 4px 16px; }
+.trip-required-cities strong { font-size:14px; }
+.trip-required-cities button { display:grid; place-items:center; width:36px; height:36px; border-radius:50%; color:#244d38; }
+.trip-required-cities button:hover { background:#d8e8d5; }
+.trip-city-error { font-size:14px; color:#9c3f26; margin:10px 0; }
+.trip-start-note p + p { margin-top:6px; }
 .trip-intro { display: flex; gap: 12px; margin: 0 0 22px; color: #31634e; }
 .trip-intro > svg { flex-shrink: 0; margin-top: 3px; }
 .trip-intro h4, .trip-country-picker h4, .trip-summary h4 { font-size: 14px; margin: 0 0 6px; color: #315b48; }

@@ -8,6 +8,7 @@ import { linkedAdults } from './flight-passengers.ts';
 import { railTripOptions } from '../src/shared/rail-network.ts';
 import { queryAirports } from '../src/shared/airport-options.ts';
 import { uniqueOffers } from '../src/shared/offer-results.ts';
+import { requiredCityCodes } from '../src/shared/trip-cities.ts';
 
 /** Only safe, user-facing messages cross the API boundary. */
 export class ProviderError extends Error {
@@ -252,7 +253,7 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
   const warnings = conditionsWarnings(query);
   if (query.departureDate && query.returnDate) {
     const entry = exactEntry(query);
-    if (!entry && query.tripPlan?.requiredAirport) {
+    if (!entry && query.tripPlan && requiredCityCodes(query.tripPlan).length) {
       const options = query.tripPlan.transport === 'train' ? railTripOptions(query.tripPlan) : [previewTrip(query.tripPlan)].filter(item => item.status === 'ready');
       const attempts = await Promise.allSettled(options.slice(0, 3).map(option => exploreFlight({ ...query, arrivalAirport: option.stops[0].airportCode,
         departureAirport: query.departureAirport || (query.allowOpenJaw ? option.stops.at(-1)!.airportCode : option.stops[0].airportCode) }, budget, true)));
@@ -261,7 +262,7 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
         const failed = attempts.find(attempt => attempt.status === 'rejected');
         if (failed?.status === 'rejected') throw failed.reason;
       }
-      return { offers: uniqueOffers(successful).sort((a,b)=>a.price-b.price), coverage: { complete:false,queries:attempts.length,description:'Datas exatas mantidas; aeroportos de entrada e saída amostrados entre roteiros que incluem a cidade obrigatória.' }, warnings };
+      return { offers: uniqueOffers(successful).sort((a,b)=>a.price-b.price), coverage: { complete:false,queries:attempts.length,description:'Datas exatas mantidas; aeroportos amostrados em roteiros que incluem todas as cidades obrigatórias. Comparação apenas das passagens aéreas consultadas; trens e hotéis não estão cotados.' }, warnings };
     }
     if (!entry) throw new ProviderError('EXACT_AIRPORT_REQUIRED', 'Para consultar datas exatas, informe o aeroporto de chegada. Deixe as datas livres para explorar uma região.', 400);
     const exit = query.departureAirport || entry;
@@ -386,7 +387,7 @@ function sampleQueries(query: FlightQuery, start: Date, end: Date): FlightQuery[
   const hubs = ['LIS', 'CDG', 'MAD', 'FCO', 'AMS', 'LHR', 'FRA', 'GRU', 'GIG', 'BSB', 'EZE', 'SCL', 'JFK', 'MIA', 'MEX', 'PTY', 'NRT', 'SIN', 'DXB', 'CAI', 'JNB', 'SYD'];
   const explicit = exactEntry(query);
   const accepted = (code: string) => code !== query.origin && matchesDestination({ arrival_airport_code: code }, { ...query, departureAirport: undefined });
-  const railOptions = query.tripPlan?.requiredAirport && query.tripPlan.transport === 'train' ? railTripOptions(query.tripPlan) : [];
+  const railOptions = query.tripPlan && requiredCityCodes(query.tripPlan).length && query.tripPlan.transport === 'train' ? railTripOptions(query.tripPlan) : [];
   let airports = explicit ? [explicit] : railOptions.length ? [...new Set(railOptions.flatMap(option => [option.stops.at(-1)!.airportCode, option.stops[0].airportCode]))] : hubs.filter(accepted);
   if (!airports.length) airports = AIRPORTS.filter(airport => accepted(airport.code)).sort((a, b) => query.area ? haversineKm(a, query.area) - haversineKm(b, query.area) : a.code.localeCompare(b.code)).slice(0, 3).map(airport => airport.code);
   const datePairs = sampleTravelDates(query, start.toISOString().slice(0, 10), end.toISOString().slice(0, 10));

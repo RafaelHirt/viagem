@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_TRIP, withRequiredCity, previewTrip } from '../src/shared/trip-planner'
+import { DEFAULT_TRIP, withRequiredCity, withRequiredCities, previewTrip } from '../src/shared/trip-planner'
+import { requiredCityCodes, tripCityName, tripCityCountry, searchTripCities } from '../src/shared/trip-cities'
+import { flightDraftFromQuery, flightQueryFromDraft } from '../src/shared/flight-draft'
+import type { FlightQuery } from '../src/shared/types'
 import { railConnections, railLeg, railTripOptions } from '../src/shared/rail-network'
 import { validateMonitor } from '../src/shared/domain'
 const paris=()=>({...withRequiredCity(DEFAULT_TRIP,'CDG'),maxLegHours:3})
@@ -32,5 +35,64 @@ describe('required European city and per-leg train constraints',()=>{
  it('does not force the required city to become the flight arrival in saved criteria',()=>{
   const monitor=validateMonitor({id:'test',kind:'flight',name:'Europa',enabled:true,createdAt:'2026-10-17T17:00:00Z',query:{origin:'GYN',destination:'Europa',minDays:10,maxDays:20,horizonMonths:12,adults:2,allowOpenJaw:true,tripPlan:paris(),arrivalAirport:'AMS',departureAirport:'LHR'},rule:{dropPercent:30,windowDays:180},channels:{telegram:false}})
   expect(monitor.query).toMatchObject({arrivalAirport:'AMS',departureAirport:'LHR',tripPlan:{requiredAirport:'CDG'}})
+ })
+})
+
+describe('multiple mandatory cities',()=>{
+ it('finds familiar city names instead of the airport municipality and groups airports of one city',()=>{
+  expect(tripCityName(searchTripCities('Lyon')[0].code)).toBe('Lyon')
+  expect(tripCityName(searchTripCities('Estrasburgo')[0].code)).toBe('Estrasburgo')
+  expect(tripCityName(searchTripCities('Zurique')[0].code)).toBe('Zurique')
+  expect(searchTripCities('Paris').filter(city=>tripCityName(city.code)==='Paris')).toHaveLength(1)
+  expect(tripCityCountry(searchTripCities('Basileia')[0].code)).toBe('CH')
+ })
+ it('includes Paris and Milan in every alternative, with a third country and a time bound on every leg',()=>{
+  const plan=withRequiredCities(paris(),['CDG','MXP'])
+  const options=railTripOptions(plan)
+  expect(options.length).toBeGreaterThan(0)
+  for(const option of options) {
+   expect(option.stops.map(stop=>stop.city)).toEqual(expect.arrayContaining(['Paris','Milão']))
+   expect(new Set(option.stops.map(stop=>stop.countryCode))).toEqual(new Set(['FR','CH','IT']))
+   expect(option.legs.every(leg=>leg.maxMinutes<=180)).toBe(true)
+  }
+  const reverse=previewTrip(plan,'MXP','CDG')
+  expect(reverse.status).toBe('ready');expect(reverse.stops[0].airportCode).toBe('MXP');expect(reverse.stops.at(-1)!.airportCode).toBe('CDG')
+  expect(previewTrip({...plan,maxLegHours:1}).status).toBe('no-route')
+ })
+ it('counts Paris and Lyon as one mandatory country while visiting both cities, with two more countries',()=>{
+  const options=railTripOptions(withRequiredCities(paris(),['CDG','LYS']))
+  expect(options.length).toBeGreaterThan(0)
+  for(const option of options) {
+   expect(option.stops.map(stop=>stop.city)).toEqual(expect.arrayContaining(['Paris','Lyon']))
+   expect(new Set(option.stops.map(stop=>stop.countryCode)).size).toBe(3)
+  }
+ })
+ it('normalizes airports of the same city, expands the area for a newly chosen city and preserves all cities when editing',()=>{
+  const plan=withRequiredCities(paris(),['ORY','CDG','FCO'])
+  expect(requiredCityCodes(plan)).toEqual(['CDG','FCO'])
+  expect(plan.areas[0].radiusKm).toBeGreaterThan(paris().areas[0].radiusKm)
+  const query:FlightQuery={origin:'GYN',destination:'Europa',minDays:10,maxDays:20,horizonMonths:12,adults:2,allowOpenJaw:true,tripPlan:plan,arrivalAirport:'MXP'}
+  expect(flightQueryFromDraft(flightDraftFromQuery(query)).tripPlan).toEqual(plan)
+  const legacy=flightDraftFromQuery({...query,tripPlan:{...paris(),requiredAirport:undefined,startAirport:'CDG'}})
+  expect(requiredCityCodes(legacy.tripPlan!)).toEqual(['CDG']);expect(legacy.tripPlan!.startAirport).toBeUndefined()
+  expect(requiredCityCodes(withRequiredCities(plan,['FCO']))).toEqual(['FCO'])
+  expect(requiredCityCodes(withRequiredCities(plan,[]))).toEqual([])
+ })
+ it('validates every mandatory city and rejects too many countries, duplicate metros, invalid cities and cities outside the area',()=>{
+  const base={id:'multi-city',kind:'flight',name:'Europa',enabled:true,createdAt:'2026-10-17T17:00:00Z',query:{origin:'GYN',destination:'Europa',minDays:10,maxDays:20,horizonMonths:12,adults:2,allowOpenJaw:true},rule:{dropPercent:30,windowDays:180},channels:{telegram:false}}
+  const plan=withRequiredCities(paris(),['CDG','MXP'])
+  expect((validateMonitor({...base,query:{...base.query,tripPlan:plan}}).query as FlightQuery).tripPlan!.requiredAirports).toEqual(['CDG','MXP'])
+  for(const patch of [{requiredAirports:['CDG','ORY']},{requiredAirports:['ZZZ']},{requiredAirports:[]},{requiredAirports:['CDG','MXP','AMS'],countryCount:2},{requiredAirports:['CDG','FCO'],areas:paris().areas}]) {
+   expect(()=>validateMonitor({...base,query:{...base.query,tripPlan:{...plan,...patch}}})).toThrow()
+  }
+ })
+ it('also preserves multiple mandatory cities in the geographic car and flight models',()=>{
+  for(const transport of ['car','flight'] as const) {
+   const plan={...withRequiredCities(paris(),['CDG','LYS']),transport,maxLegHours:12}
+   const result=previewTrip(plan)
+   expect(result.status).toBe('ready')
+   expect(result.stops.map(stop=>stop.airportCode)).toEqual(expect.arrayContaining(['CDG','LYS']))
+   expect(result.countryCount).toBe(3);expect(result.legs.every(leg=>leg.maxMinutes<=720)).toBe(true)
+  }
  })
 })
