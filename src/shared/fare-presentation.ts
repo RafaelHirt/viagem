@@ -1,4 +1,5 @@
 import { shortAirportLabel } from './airports.ts'
+import { airportSetLabel } from './airport-options.ts'
 import type { Offer } from './types.ts'
 
 export interface PresentedFare {
@@ -144,13 +145,13 @@ export function presentFlightFacts(offer: Offer): PresentedFlightFacts {
   const duration = days !== null && Number.isSafeInteger(days) && days > 0
     ? `${days} ${days === 1 ? 'dia' : 'dias'} ${requestedReturn ? days === 1 ? 'previsto' : 'previstos' : 'de viagem'}` : null
   const returnNotice = offer.itineraryStatus === 'complete' ? null
-    : offer.itineraryStatus === 'outbound-only' ? 'Volta solicitada; voo ainda não selecionado'
-      : offer.itineraryStatus === 'round-trip-dates' ? 'Voos de volta a confirmar no vendedor'
+    : offer.itineraryStatus === 'outbound-only' ? 'Horários da volta a confirmar'
+      : offer.itineraryStatus === 'round-trip-dates' ? 'Horários da volta a confirmar'
         : returnDate ? 'Volta ainda não confirmada' : 'Volta não informada'
   return {
     route: legs.find((leg) => leg.direction === 'outbound')?.route ?? routeLabel(offer.origin, offer.arrivalAirport),
     returnRoute: legs.find((leg) => leg.direction === 'return')?.route
-      ?? (offer.departureAirport && offer.origin ? routeLabel(offer.departureAirport, offer.origin) : null),
+      ?? (offer.searchedReturnAirports?.length || offer.searchedHomeAirports?.length ? `${airportSetLabel(offer.departureAirport, offer.searchedReturnAirports)} → ${airportSetLabel(offer.origin, offer.searchedHomeAirports)}` : offer.departureAirport && offer.origin ? routeLabel(offer.departureAirport, offer.origin) : null),
     dates,
     duration,
     returnNotice,

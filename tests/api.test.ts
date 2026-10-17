@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createApiHandler, collectMonitors } from '../server/api.ts';
+import { createApiHandler, collectMonitors, summarizeMonitor } from '../server/api.ts';
 import { createFileStorage } from '../server/storage.ts';
 import { sendNotifications } from '../server/notifications.ts';
 import type { ExploreResult, Monitor, Observation, Offer } from '../src/shared/types.ts';
@@ -213,3 +213,21 @@ describe('editing saved alerts with separate price histories', () => {
     expect((await handler(request(`/api/monitors/${monitor.id}`, 'PUT', monitor, cookie, 'https://elsewhere.example'))).status).toBe(403);
   });
 })
+
+
+describe('historical price comparison scope', () => {
+  it('uses same-criteria daily prices and never mixes group totals, individual prices or a previous weekday configuration', async () => {
+    const { storage } = await storageFixture();
+    const monitor = { ...input, id: 'weekend-history', kind: 'flight', createdAt: new Date().toISOString(), criteriaVersion: 1, query: { ...input.query, adults: 2, minDays: 2, maxDays: 2, departureWeekdays: [5], returnWeekdays: [0] }, rule: { dropPercent: 30, windowDays: 180 } } as Monitor;
+    const current = offer({ price: 70000, passengers: 2, passengerValidation: 'source-verified', priceBasis: 'group-total' });
+    for (let day = 1; day <= 7; day++) {
+      const observedAt = new Date(Date.now() - day * 86400000).toISOString();
+      await storage.saveObservation({ id: 'good-' + day, monitorId: monitor.id, observedAt, price: 100000, currency: 'BRL', offer: { ...current, observedAt, price: 100000 }, complete: true, criteriaVersion: 1 });
+      await storage.saveObservation({ id: 'old-' + day, monitorId: monitor.id, observedAt, price: 100, currency: 'BRL', offer: { ...current, observedAt, price: 100 }, complete: true, criteriaVersion: 0 });
+      await storage.saveObservation({ id: 'person-' + day, monitorId: monitor.id, observedAt, price: 50000, currency: 'BRL', offer: { ...current, observedAt, price: 50000, priceBasis: 'per-person' }, complete: true, criteriaVersion: 1 });
+    }
+    await storage.saveObservation({ id: 'current', monitorId: monitor.id, observedAt: current.observedAt, price: current.price, currency: 'BRL', offer: current, complete: true, criteriaVersion: 1 });
+    const summary = await summarizeMonitor(storage, monitor);
+    expect(summary.baseline).toMatchObject({ mean: 100000, validDays: 7, dropPercent: 30, windowDays: 180 });
+  });
+});

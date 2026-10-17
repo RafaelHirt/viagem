@@ -1,45 +1,44 @@
-# Prévia de roteiros por vários países
+# Roteiros por vários países
 
-Em **Explorar agora → Passagens aéreas → Vários países**, o usuário escolhe primeiro a cidade de chegada ao roteiro e depois de dois a cinco países, a área de exploração, o transporte e o limite de tempo por trecho. A primeira cidade fica fixa; a sequência pode se expandir em qualquer direção dentro das áreas. Outras áreas são opcionais e ficam recolhidas. A quantidade de áreas não pode superar a quantidade de países. Uma área pode abranger vários países; a prévia precisa visitar todas as áreas e conter exatamente a quantidade de países diferentes escolhida. Há uma cidade de referência por país, além de eventual retorno à cidade de entrada.
+Em **Buscar viagem → Vários países**, escolha uma **cidade obrigatória**, de dois a cinco países, transporte, limite por trecho e área de exploração. A cidade pode ser entrada, saída ou parada intermediária. O aeroporto do voo é escolhido separadamente; marcar Paris não obriga a chegar por Paris.
 
-Países sem marcação ficam livres dentro das áreas. Os países marcados são obrigatórios. Para fixar a ordem, todos os países devem ser escolhidos; vale a sequência dos cliques. A opção de ordem livre busca uma sequência menor em distância dentro da amostra, sem afirmar que é a mais barata.
+Países marcados são obrigatórios. Para fixar a ordem, marque todos e desative a ordem livre. Cada área deve conter ao menos uma cidade visitada; há no máximo uma área por país desejado, e uma área pode abranger vários países. Países distintos são contados uma vez. Pode haver várias paradas no mesmo país para respeitar o tempo de cada deslocamento.
 
-O botão **Ver exemplo de 3 países** preenche um exemplo editável usando áreas em torno de aeroportos reais. Não injeta tarifas ou resultados de fornecedores. Os países e aeroportos vêm do catálogo descrito em [DADOS-GEOGRAFICOS.md](DADOS-GEOGRAFICOS.md); o termo país segue a classificação do catálogo, que inclui territórios.
+## Trem na Europa
 
-## Como os tempos são estimados
+`rail-network.ts` guarda uma rede limitada de cidades, conexões e faixas indicativas de duração, editadas manualmente, com links dos operadores. Não consulta horários, obras, conexões disponíveis ou preços para a data escolhida. As faixas não são uma garantia de tempo real; a presença de um link oficial não significa que um horário foi consultado nesse site.
 
-Não existe integração com um serviço de rotas, trânsito, ferrovias ou horários nesta versão. Usamos coordenadas dos aeroportos como referência aproximada das cidades, distância geodésica e o seguinte modelo, em horas:
+A busca usa somente conexões dessa rede e aplica o limite ao maior tempo de cada faixa. Não inventa Bruxelas → Milão como um deslocamento direto de3h. Paris → Bélgica → Holanda pode ser uma opção; Paris → Suíça → Itália pode exigir Estrasburgo, Basileia, Zurique e Lugano como paradas para que cada trecho da prévia caiba no limite. A lista mostra a duração de cada trecho e como consultar o operador.
 
-| Modo | Limite inferior indicativo | Limite superior indicativo |
+No mapa, o círculo delimita a área geográfica. As linhas verdes mostram conexões de referência da cidade obrigatória que cabem nas horas escolhidas; não são uma isócrona de viagem acumulada. A rota selecionada tem segmentos e pontos numerados. Linhas são esquemáticas, não a geometria dos trilhos. Ao mudar de2h para48h, as conexões mudam, mesmo que o raio geográfico continue igual.
+
+As alternativas procuram mostrar direções diferentes. A busca é limitada: beam256, até10 expansões e amostra de alternativas. Uma sequência não encontrada não prova ausência de trem real. Cidades fora da rede não recebem conexões ferroviárias por uma fórmula de distância.
+
+## Outros meios
+
+A prévia geográfica para carro/avião usa coordenadas como referência e distância geodésica. As faixas, em horas, são:
+
+| Modo | Inferior indicativo | Superior indicativo |
 | --- | --- | --- |
-| Carro | distância × 1,15 ÷ 95 + 0,25 | distância × 1,55 ÷ 65 + 0,75 |
-| Trem | distância × 1,15 ÷ 180 + 0,5 | distância × 1,6 ÷ 90 + 1 |
-| Avião | distância ÷ 800 + 3 | distância ÷ 500 + 5 |
+| Carro | distância ×1,15 ÷95 +0,25 | distância ×1,55 ÷65 +0,75 |
+| Avião | distância ÷800 +3 | distância ÷500 +5 |
 
-Cada valor é arredondado para cima em cinco minutos. Essas constantes são hipóteses de planejamento, não dados de uma transportadora. O avião inclui margem para acesso, antecedência e desembarque; carro/trem incluem margens para desvio e acesso. O limite escolhido pelo usuário usa o extremo superior da faixa. Não verificamos se existe uma estrada, trem, voo, travessia ou conexão entre as cidades. Mar, montanhas, fronteiras e horários podem tornar a estimativa inadequada. A interface exibe essa limitação e um detalhe com o método.
+Arredondamos para cima em5 minutos. São hipóteses de planejamento: não confirmam estrada, voo, travessia, fronteira, serviço ou tarifa. O limite usa o extremo superior. O modelo geográfico anterior permanece para compatibilidade de dados; não deve ser apresentado como horário ferroviário.
 
-As linhas no mapa conectam referências geográficas; não desenham estradas ou linhas ferroviárias. O enquadramento automático mostra as bolhas juntas e o controle de enquadrar permite recuperar a visão do conjunto. Novas áreas podem ser posicionadas por clique ou pelo botão de marcar no centro; cada área tem raio editável e botão de remoção.
+## Ligação com preços aéreos
 
-## Busca limitada e ligação com preços
+`tripPlan` é validado e persistido com os critérios do alerta. Entrada e saída de uma oferta, quando conhecidas, ficam fixas na prévia daquela oferta. Uma ida e volta pelo mesmo aeroporto precisa incluir também o caminho de retorno dentro do limite por trecho. A prévia sem tarifa pode ter outra ordem.
 
-O planejador considera até um aeroporto de referência por país/área, mais os aeroportos efetivos de uma oferta. Limita a amostra a 24 países, preservando os obrigatórios, e mantém até 96 caminhos por etapa. Não encontrar um caminho nessa busca não comprova inexistência de um roteiro real.
+Em datas exatas e sem entrada aérea fixa, a busca pode amostrar até3 pares de entrada/saída de roteiros compatíveis, preservando as datas. Para períodos flexíveis, a descoberta e amostras continuam limitadas. Não é uma busca de todas as combinações nem prova de menor orçamento total.
 
-`tripPlan` é validado pela API e persistido junto ao monitor. A API rejeita países desconhecidos/duplicados, coordenadas inválidas, contagens fora do limite e limites de tempo fora de 1–48 horas. Uma área simples e um roteiro não podem ser enviados simultaneamente.
+O preço inclui somente a passagem aérea informada pela fonte. Trens, carros, voos internos e hotéis não estão cotados. Candidatos sem confirmação do retorno/total continuam fora da média válida e dos avisos de queda confirmada. A confirmação de criação do alerta é outro evento.
 
-Quando há pesquisa de passagens, a descoberta continua usando a fonte já implementada: candidatos de ida e volta pelo mesmo aeroporto, ou um par exato multicidade quando há datas e aeroportos definidos. Avaliamos no máximo os 20 candidatos aéreos mais baratos da amostra, montando uma prévia ancorada nos aeroportos efetivos de cada oferta. Para ida e volta no mesmo aeroporto, incluímos o deslocamento de retorno no roteiro e no limite por trecho. Uma prévia sem tarifa é apenas uma possibilidade, e pode ter ordem diferente da prévia ligada a uma passagem.
+## Edição e dados antigos
 
-O valor exibido é somente o informado pela fonte aérea. Trens, carros, voos internos e hotéis não têm cotação, e o sistema não calcula o menor orçamento total da viagem. O roteiro geográfico e o preço candidato permanecem sem confirmação; não geram alertas de tarifa confirmada. As regras de um alerta podem ser salvas, mas isso não conclui a integração de tarifas nem ativa notificações.
+O cadastro novo usa `requiredAirport` como referência da cidade obrigatória. `startAirport` permanece para ler alertas antigos que fixavam a entrada. Ao abrir edição, a referência pode ser migrada para cidade obrigatória; o aeroporto de chegada salvo continua visível e pode ser liberado nas preferências. Mudar critérios separa o histórico por `criteriaVersion`.
 
-## Configuração de acesso
+Os aeroportos vêm do catálogo descrito em [DADOS-GEOGRAFICOS.md](DADOS-GEOGRAFICOS.md). A rede ferroviária usa centros de cidades para desenhar o mapa, aeroportos de referência para ligação com a busca aérea e uma identificação suíça para a estação de Basileia, apesar da localização francesa do aeroporto compartilhado.
 
-`/api/status` informa `authConfiguration` como `missing`, `too-short` ou `ready`, sem expor o valor nem o tamanho exato da senha. Em produção, senha com menos de 12 caracteres mantém as operações privadas bloqueadas. A interface orienta editar `DASHBOARD_PASSWORD` no contexto **Production** do Netlify e fazer novo deploy. Não existe senha substituta ou atalho de autenticação em produção.
+## Operação do mapa
 
-## Arraste da área
-
-Arraste dentro da bolha para movê-la sem alterar seu raio. Puxe qualquer ponto da borda ou um dos quatro controles para aumentar/diminuir a área; os alvos mantêm tamanho adequado ao toque em telas pequenas. Arrastar fora da seleção move o mapa. A barra de tamanho continua disponível, inclusive por teclado. Mapas de alertas salvos permanecem somente leitura.
-
-## Partida fixa e significado do raio
-
-`tripPlan.startAirport` ancora o roteiro e também o aeroporto de chegada da busca aérea. A seleção de uma nova partida recentra a área principal, preservando seu raio e as áreas extras. Uma oferta chegando por outro aeroporto é descartada. O usuário pode escolher um aeroporto diferente de volta nas preferências; os dois extremos precisam respeitar a área e o roteiro.
-
-O raio limita geograficamente as cidades candidatas. Aumentá-lo não altera o limite de horas e não significa que toda a bolha seja acessível naquele tempo. Cada ligação precisa respeitar o limite estimado. O cálculo continua sem consultar linhas/horários de trem, tarifas internas ou travessias: não é uma isócrona nem uma rota ferroviária validada.
+Arraste a bolha para mover a área; puxe a borda ou uma das quatro alças para mudar o raio. O slider é alternativa por teclado. Arrastar fora da bolha move a câmera. Mapas salvos são somente leitura. No modo ferroviário, ampliar a área não dispensa o limite de tempo das conexões.

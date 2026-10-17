@@ -1,8 +1,11 @@
-import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import QueryWizard, { initialFlight, initialHotel, type FlightDraft, type HotelDraft } from "./components/QueryWizard";
 import { findAirport, shortAirportLabel } from "./shared/airports";
 import SetupGuide from "./components/SetupGuide";
-import AlertFields from "./components/AlertFields";
+import AlertFields, { type AlertValues } from "./components/AlertFields";
+import { airportSetLabel } from "./shared/airport-options";
+import AirlineBrand from "./components/AirlineBrand";
+import { outboundSchedule, sortOffers, uniqueOffers, type OfferSort } from "./shared/offer-results";
 import { needsPassengerRecheck, presentFare, presentFlightFacts } from "./shared/fare-presentation";
 import { runSearchJob } from "./shared/search-client";
 import { flightDraftFromQuery, flightQueryFromDraft } from "./shared/flight-draft";
@@ -45,6 +48,7 @@ import type {
   ExploreResult,
   FlightQuery,
   HotelQuery,
+  Monitor,
   MonitorSummary,
   Observation,
   Offer,
@@ -96,6 +100,15 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
       data.error || "Não foi possível concluir a solicitação. Tente novamente.",
     );
   return data as T;
+}
+function monitorInput(kind: Kind, query: FlightQuery | HotelQuery, value: AlertValues) {
+  const flight = query as FlightQuery;
+  return { kind, query, name: value.name.trim() || (kind === 'flight' ? `${airportSetLabel(flight.origin, flight.originAirports)} → ${flight.arrivalAirport ? airportSetLabel(flight.arrivalAirport, flight.arrivalAirports) : flight.destination}` : (query as HotelQuery).property).slice(0, 120),
+    rule: { dropPercent: Number(value.dropPercent), windowDays: Number(value.windowDays) }, channels: { ...(value.email.trim() ? { email: value.email.trim() } : {}), telegram: value.telegram } };
+}
+function confirmationMessage(monitor: Monitor) {
+  const status = monitor.creationEmail?.status;
+  return status === 'sent' ? 'Confirmação enviada por e-mail.' : status === 'duplicate' ? 'Confirmação já solicitada para este alerta.' : status === 'not-configured' ? 'E-mail salvo; o serviço de envio ainda não está ativo.' : status === 'failed' ? 'Alerta salvo; não conseguimos enviar o e-mail de confirmação.' : '';
 }
 function Field({
   label,
@@ -164,7 +177,7 @@ function queryDescription(summary: MonitorSummary) {
   const q = summary.monitor.query;
   if (summary.monitor.kind === "flight") {
     const flight = q as FlightQuery;
-    return `${shortAirportLabel(flight.origin)} → ${flight.tripPlan?.startAirport ? `${shortAirportLabel(flight.tripPlan.startAirport)} · ${flight.tripPlan.countryCount} países` : flight.arrivalAirport ? shortAirportLabel(flight.arrivalAirport) : flight.destination} · ${flight.minDays === flight.maxDays ? flight.minDays : `${flight.minDays} a ${flight.maxDays}`} dias · ${flightPeriodLabel(flight)}${flight.departureWeekdays?.length || flight.returnWeekdays?.length ? ` · ida ${weekdayLabel(flight.departureWeekdays)}, volta ${weekdayLabel(flight.returnWeekdays)}` : ''}`;
+    return `${airportSetLabel(flight.origin, flight.originAirports)} → ${flight.tripPlan?.startAirport ? `${shortAirportLabel(flight.tripPlan.startAirport)} · ${flight.tripPlan.countryCount} países` : flight.arrivalAirport ? airportSetLabel(flight.arrivalAirport, flight.arrivalAirports) : flight.destination} · ${flight.minDays === flight.maxDays ? flight.minDays : `${flight.minDays} a ${flight.maxDays}`} dias · ${flightPeriodLabel(flight)}${flight.departureWeekdays?.length || flight.returnWeekdays?.length ? ` · ida ${weekdayLabel(flight.departureWeekdays)}, volta ${weekdayLabel(flight.returnWeekdays)}` : ''}`;
   }
   const hotel = q as HotelQuery;
   return `${hotel.property} · ${hotel.pattern === "weekend" ? "sexta a domingo" : hotel.pattern === "weekdays" ? "domingo a sexta" : "semana e fins de semana"}`;
@@ -176,6 +189,7 @@ function FlightFacts({ offer, showRoute = true }: { offer: Offer; showRoute?: bo
     {showRoute && facts.route && <p className="flight-facts-route">{facts.route}</p>}
     {facts.returnRoute && <p>Volta{offer.itineraryStatus === 'complete' ? '' : ' prevista'}: {facts.returnRoute}</p>}
     {facts.dates && <p><CalendarDays size={15} />{facts.dates}{facts.duration && <strong>{facts.duration}</strong>}</p>}
+    {outboundSchedule(offer) && <p className="flight-schedule"><strong>{outboundSchedule(offer)}</strong>{facts.legs[0]?.duration && <span>{facts.legs[0].duration}</span>}{facts.legs[0]?.stops && <span>{facts.legs[0].stops}</span>}</p>}
     {facts.returnNotice && <small>{facts.returnNotice}</small>}
   </div>;
 }
@@ -189,19 +203,20 @@ function OfferCard({ offer, adults }: { offer: Offer; adults?: number }) {
   return <article className="offer-card">
     <h3>{offer.kind === 'flight' ? presentFlightFacts(offer).route || offer.title : offer.title}</h3>
     {offer.kind === 'flight' ? <FlightFacts offer={offer} showRoute={false} /> : <p className="offer-dates">{date(offer.outboundDate)} — {date(offer.returnDate)}{offer.nights ? ` · ${offer.nights} noites` : ''}</p>}
-    {offer.airline && <p className="offer-airline">{offer.airline}</p>}
+    <AirlineBrand offer={offer} />
+    {offer.tripPreview && <details className="offer-trip-preview"><summary>Roteiro: {offer.tripPreview.stops.map(stop => stop.city).join(" → ")}</summary><TripSummary preview={offer.tripPreview} transport={offer.tripPreview.transport} /></details>}
     <div className="offer-bottom"><FareAmount offer={offer} adults={adults} />{safeUrl && <a href={safeUrl} target="_blank" rel="noopener noreferrer" className="button button-secondary button-small">Ver no vendedor<ExternalLink size={14} /></a>}</div>
-    <details className="offer-conditions"><summary>Ver detalhes</summary>
+    <details className="offer-conditions"><summary>Voos e condições</summary>{offer.itineraryStatus !== "complete" && <p>A consulta inclui a data de volta, mas ainda não confirmou um voo de retorno. Confira ida, volta e total antes de comprar.</p>}
       {offer.flightLegs?.filter(leg => leg.segments.length).map((leg, index) => <div className="flight-leg-detail" key={index}><strong>{leg.direction === 'return' ? 'Volta' : 'Ida'}</strong>{leg.segments.map((segment, i) => <p key={i}>{segment.origin} → {segment.destination}{segment.departureTime ? ` · ${segment.departureTime}` : ''}{segment.arrivalTime ? ` — ${segment.arrivalTime}` : ''}{segment.flightNumber ? ` · ${segment.flightNumber}` : ''}</p>)}</div>)}
       <ul className="offer-details">{offer.details.map((detail, i) => <li key={i}>{detail}</li>)}</ul>
-      {offer.tripPreview && <TripSummary preview={offer.tripPreview} transport={offer.tripPreview.transport} />}
+
       <p>Consultado em {dateTime(offer.observedAt)}. {offer.confirmed ? 'Preço verificado na consulta.' : 'Confira disponibilidade, total e bagagem no vendedor.'}</p>
     </details>
   </article>;
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("explore");
+  const [tab, setTab] = useState<Tab>(() => new URLSearchParams(location.search).has("alert") ? "monitors" : "explore");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
   const [monitors, setMonitors] = useState<MonitorSummary[]>([]);
@@ -212,6 +227,8 @@ export default function App() {
   const [flight, setFlight] = useState<FlightDraft>(initialFlight);
   const [hotel, setHotel] = useState<HotelDraft>(initialHotel);
   const [createMonitor, setCreateMonitor] = useState(false);
+  const [createWhileSearching, setCreateWhileSearching] = useState(false);
+  const [inlineCreated, setInlineCreated] = useState<{ id: string; identity: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [monitorName, setMonitorName] = useState("");
   const [dropPercent, setDropPercent] = useState("20");
@@ -220,12 +237,34 @@ export default function App() {
   const [telegram, setTelegram] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<ExploreResult | null>(null);
-  const [searchContext, setSearchContext] = useState<{ kind: Kind; query: FlightQuery | HotelQuery; jobId?: string } | null>(null);
+  const [offerSort, setOfferSort] = useState<OfferSort>("price-asc");
+  const [searchContext, setSearchContext] = useState<{ kind: Kind; query: FlightQuery | HotelQuery; jobId?: string; monitorId?: string } | null>(null);
   const [pendingAlert, setPendingAlert] = useState<typeof searchContext>(null);
   const [exploreError, setExploreError] = useState("");
+  const [monitorSort, setMonitorSort] = useState("recent");
   const [monitorFilter, setMonitorFilter] = useState<"all" | Kind>("all");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [historyId, setHistoryId] = useState<string | null>(null);
+  const historyDialog = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!historyId) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const dialog = historyDialog.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    dialog?.querySelector<HTMLButtonElement>('button')?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setHistoryId(null);
+      if (event.key === 'Tab' && dialog) {
+        const items = [...dialog.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],summary,[tabindex="0"]')].filter(element => element.getClientRects().length);
+        const first = items[0], last = items.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
+    window.addEventListener('keydown', keydown);
+    return () => { window.removeEventListener('keydown', keydown); document.body.style.overflow = previousOverflow; previous?.focus(); };
+  }, [historyId]);
   const [observations, setObservations] = useState<Observation[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [password, setPassword] = useState("");
@@ -264,6 +303,13 @@ export default function App() {
     const timer = window.setTimeout(() => setToast(""), 6000);
     return () => window.clearTimeout(timer);
   }, [toast]);
+  const focusedLink = useRef(false);
+  useEffect(() => {
+    if (loading || tab !== 'monitors' || focusedLink.current) return;
+    const id = new URLSearchParams(location.search).get('alert');
+    const element = id && /^[a-zA-Z0-9_-]{1,100}$/.test(id) ? document.getElementById(`monitor-${id}`) : null;
+    if (element) { focusedLink.current = true; element.tabIndex = -1; element.scrollIntoView({ block: 'center' }); element.focus({ preventScroll: true }); }
+  }, [loading, tab, monitors]);
   const navigate = (next: Tab) => {
     setTab(next);
     setMobileMenu(false);
@@ -316,19 +362,29 @@ export default function App() {
     };
   }
   async function explore(event: FormEvent) {
-    event.preventDefault();
-    setSubmitting(true);
-    setExploreError("");
-    setResults(null);
+    event.preventDefault(); setSubmitting(true); setExploreError(""); setResults(null);
+    let created: Monitor | undefined;
     try {
-      const context = { kind, query: structuredClone(makeQuery()) };
+      const context: NonNullable<typeof searchContext> = { kind, query: structuredClone(makeQuery()) };
+      if (createWhileSearching) {
+        const value = { name: monitorName, email, telegram, dropPercent, windowDays };
+        const identity = JSON.stringify(monitorInput(kind, context.query, value));
+        if (inlineCreated?.identity === identity) created = monitors.find(item => item.monitor.id === inlineCreated.id)?.monitor;
+        if (!created) {
+          const saved = await api<{ monitor: Monitor }>("/monitors", { method: 'POST', body: identity });
+          created = saved.monitor; setInlineCreated({ id: created.id, identity });
+          setToast(`Alerta criado. ${confirmationMessage(created)}`);
+        }
+        context.monitorId = created.id;
+        setMonitors((await api<{ monitors: MonitorSummary[] }>("/monitors")).monitors);
+      }
       setSearchContext(context);
-      setResults(await runSearchJob<ExploreResult>(context, jobId => setSearchContext({ ...context, jobId })));
+      const result = await runSearchJob<ExploreResult>(created ? { monitorId: created.id } : { kind, query: context.query }, jobId => setSearchContext({ ...context, jobId }));
+      setResults(result);
+      if (created) setMonitors((await api<{ monitors: MonitorSummary[] }>("/monitors")).monitors);
     } catch (e) {
-      setExploreError((e as Error).message);
-    } finally {
-      setSubmitting(false);
-    }
+      setExploreError(`${(e as Error).message}${created ? ' Seu alerta ficou salvo em Meus alertas.' : ''}`);
+    } finally { setSubmitting(false); }
   }
   async function saveMonitor(event: FormEvent) {
     event.preventDefault();
@@ -338,24 +394,9 @@ export default function App() {
       const query = pendingAlert?.query ?? makeQuery();
       const savedKind = pendingAlert?.kind ?? kind;
       const wasEditing = Boolean(editingId);
-      const saved = await api<{ monitor: { id: string }; seeded?: boolean; criteriaChanged?: boolean; additionalMonitors?: unknown[] }>(editingId ? `/monitors/${editingId}` : "/monitors", {
+      const saved = await api<{ monitor: Monitor; seeded?: boolean; criteriaChanged?: boolean; additionalMonitors?: unknown[] }>(editingId ? `/monitors/${editingId}` : "/monitors", {
         method: editingId ? "PUT" : "POST",
-        body: JSON.stringify({
-          kind: savedKind,
-          ...(pendingAlert?.jobId ? { sourceSearchJobId: pendingAlert.jobId } : {}),
-          name: monitorName.trim() || (savedKind === "flight"
-            ? `${findAirport((query as FlightQuery).origin)?.city || (query as FlightQuery).origin} → ${(query as FlightQuery).destination}`.slice(0, 120)
-            : (query as HotelQuery).property.slice(0, 120)),
-          query,
-          rule: {
-            dropPercent: Number(dropPercent),
-            windowDays: Number(windowDays),
-          },
-          channels: {
-            ...(email.trim() ? { email: email.trim() } : {}),
-            telegram,
-          },
-        }),
+        body: JSON.stringify({ ...monitorInput(savedKind, query, { name: monitorName, email, telegram, dropPercent, windowDays }), ...(pendingAlert?.jobId ? { sourceSearchJobId: pendingAlert.jobId } : {}) }),
       });
       const data = await api<{ monitors: MonitorSummary[] }>("/monitors");
       setMonitors(data.monitors);
@@ -368,7 +409,7 @@ export default function App() {
       if ((!wasEditing || saved.criteriaChanged) && !saved.seeded) {
         setToast(wasEditing ? "Alerta atualizado. Consultando preços para os novos critérios…" : "Alerta salvo. Consultando os primeiros preços…");
         await monitorAction(saved.monitor.id, "run");
-      } else setToast(wasEditing ? "Alterações salvas." : "Alerta salvo com o preço desta busca.");
+      } else setToast(wasEditing ? "Alterações salvas." : `Alerta salvo com o preço desta busca. ${confirmationMessage(saved.monitor)}`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -403,6 +444,7 @@ export default function App() {
         });
       else {
         await api(`/monitors/${id}`, { method: "DELETE" });
+        if (inlineCreated?.id === id) setInlineCreated(null);
         setDeleteId(null);
         setToast("Monitor excluído.");
       }
@@ -448,10 +490,11 @@ export default function App() {
       setLoginBusy(false);
     }
   }
+  const visibleOffers = sortOffers(uniqueOffers(results?.offers ?? []), offerSort);
   const activeCount = monitors.filter((item) => item.monitor.enabled).length;
   const filteredMonitors = monitors.filter(
     (item) => monitorFilter === "all" || item.monitor.kind === monitorFilter,
-  );
+  ).sort((a,b) => monitorSort === "name" ? a.monitor.name.localeCompare(b.monitor.name, 'pt-BR') : monitorSort === "price" ? (a.latest?.price ?? Infinity) - (b.latest?.price ?? Infinity) : b.monitor.createdAt.localeCompare(a.monitor.createdAt));
   const queryProps = {
     kind,
     flight,
@@ -882,7 +925,7 @@ export default function App() {
                   </div>
                   <div className="explore-layout">
                     <section className="panel search-panel">
-                      {results && searchContext ? <div className="search-recap"><div><strong>{searchContext.kind === 'flight' ? `${shortAirportLabel((searchContext.query as FlightQuery).origin)} → ${(searchContext.query as FlightQuery).arrivalAirport ? shortAirportLabel((searchContext.query as FlightQuery).arrivalAirport!) : (searchContext.query as FlightQuery).destination}` : (searchContext.query as HotelQuery).property}</strong><p>{searchContext.query.adults} {searchContext.query.adults === 1 ? 'adulto' : 'adultos'}{searchContext.kind === 'flight' ? ` · ${flightPeriodLabel(searchContext.query as FlightQuery)}` : ''}</p></div><button className="button button-secondary" onClick={() => { setResults(null); setPendingAlert(null); setExploreError(""); }}>Alterar busca</button></div> : <QueryWizard hotelAvailable={status.providers.hotels.configured} mode="explore" {...queryProps} submitting={submitting} onSubmit={explore} onKindChange={(value) => { setKind(value); setResults(null); setExploreError(""); }} />}
+                      {results && searchContext ? <div className="search-recap"><div><strong>{searchContext.kind === 'flight' ? `${airportSetLabel((searchContext.query as FlightQuery).origin, (searchContext.query as FlightQuery).originAirports)} → ${(searchContext.query as FlightQuery).arrivalAirport ? airportSetLabel((searchContext.query as FlightQuery).arrivalAirport!, (searchContext.query as FlightQuery).arrivalAirports) : (searchContext.query as FlightQuery).destination}` : (searchContext.query as HotelQuery).property}</strong><p>{searchContext.query.adults} {searchContext.query.adults === 1 ? 'adulto' : 'adultos'}{searchContext.kind === 'flight' ? ` · ${flightPeriodLabel(searchContext.query as FlightQuery)}` : ''}</p></div><button className="button button-secondary" onClick={() => { setResults(null); setPendingAlert(null); setExploreError(""); }}>Alterar busca</button></div> : <QueryWizard hotelAvailable={status.providers.hotels.configured} mode="explore" searchAlertEnabled={createWhileSearching} onSearchAlertEnabledChange={setCreateWhileSearching} searchAlertFields={alertFields} alertSummary={`${dropPercent}% abaixo da média dos últimos ${windowDays} dias${email ? ` · ${email}` : " · acompanhamento no painel"}`} {...queryProps} submitting={submitting} onSubmit={explore} onKindChange={(value) => { setKind(value); setResults(null); setExploreError(""); }} />}
                     </section>
 
                   </div>
@@ -910,15 +953,15 @@ export default function App() {
                             RESULTADO DA SUA PESQUISA
                           </span>
                           <h2>
-                            {results.offers.length ? `${results.offers.length} ${results.offers.length === 1 ? 'passagem encontrada' : 'passagens encontradas'}` : 'Não encontramos preços nesta busca'}
+                            {visibleOffers.length ? `${visibleOffers.length} ${visibleOffers.length === 1 ? 'opção encontrada' : 'opções encontradas'}` : 'Não encontramos preços nesta busca'}
                           </h2>
                         </div>
                         <button
-                          className="button button-primary" disabled={Boolean(pendingAlert)}
-                          onClick={openAlert}
+                          className="button button-primary alert-cta" disabled={Boolean(pendingAlert)}
+                          onClick={() => searchContext?.monitorId ? navigate("monitors") : openAlert()}
                         >
                           <Bell size={16} />
-                          Criar alerta desta busca
+                          {searchContext?.monitorId ? "Ver meu alerta" : "Criar alerta desta busca"}
                         </button>
                       </div>
                       {pendingAlert && <section className="panel save-alert-panel" aria-labelledby="save-alert-title">
@@ -927,9 +970,10 @@ export default function App() {
                       </section>}
                       {results.offers.length > 0 && <p className="search-results-note">{results.search?.message || 'Preços encontrados para as datas consultadas.'} Confira o valor final, bagagem e condições antes de comprar.</p>}
                       <details className="search-explanation"><summary>Sobre esta busca</summary><p>{results.coverage.description}</p>{results.warnings.length > 0 && <ul>{results.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul>}</details>
-                      {results.offers.length ? (
+                      {visibleOffers.length > 0 && <div className="results-toolbar"><span>Compare horários, escalas e condições.</span><label>Ordenar por<select aria-label="Ordenar passagens" value={offerSort} onChange={event => setOfferSort(event.target.value as OfferSort)}><option value="price-asc">Menor preço</option><option value="price-desc">Maior preço</option><option value="duration">Menor duração da ida</option><option value="departure">Data de ida</option></select></label></div>}
+                      {visibleOffers.length ? (
                         <div className="offers-grid">
-                          {results.offers.map((offer) => (
+                          {visibleOffers.map((offer) => (
                             <OfferCard key={offer.id} offer={offer} adults={searchContext?.query.adults} />
                           ))}
                         </div>
@@ -1029,6 +1073,7 @@ export default function App() {
                             </button>
                           ))}
                         </div>
+                        <label className="monitor-sort">Ordenar<select aria-label="Ordenar alertas" value={monitorSort} onChange={event => setMonitorSort(event.target.value)}><option value="recent">Mais recentes</option><option value="price">Menor preço</option><option value="name">Nome</option></select></label>
                         <span className="muted-small">
                           {activeCount}{" "}
                           {status.collection?.enabled ? activeCount === 1 ? 'alerta habilitado' : 'alertas habilitados' : activeCount === 1 ? 'busca salva' : 'buscas salvas'}
@@ -1065,7 +1110,7 @@ Escolha uma viagem no mapa para começar.
                         <div className="monitor-grid">
                           {filteredMonitors.map((item) => (
                             <article
-                              className="panel monitor-card"
+                              className="panel monitor-card" id={`monitor-${item.monitor.id}`}
                               key={item.monitor.id}
                             >
                               <div className="monitor-card-top">
@@ -1100,6 +1145,7 @@ Escolha uma viagem no mapa para começar.
                                 {!needsPassengerRecheck(item.latest, item.monitor.query.adults) && item.latest.url && /^https:\/\//i.test(item.latest.url) && <a className="text-button saved-offer-link" href={item.latest.url} target="_blank" rel="noopener noreferrer">Conferir no vendedor<ExternalLink size={14} /></a>}
                                 <span className="last-query">Consultado em {dateTime(item.latest.observedAt)}</span>
                               </> : <div className="monitor-price"><div><strong>{busyId === item.monitor.id ? 'Consultando preços…' : 'Faça a primeira consulta'}</strong><small>{busyId === item.monitor.id ? 'Você pode continuar usando o painel.' : 'Use Consultar preços abaixo para ver as opções.'}</small></div></div>}
+                              {item.monitor.creationEmail && item.monitor.creationEmail.status !== 'no-recipient' && <p className="creation-receipt">{confirmationMessage(item.monitor)}{(item.monitor.creationEmail.status === 'failed' || item.monitor.creationEmail.status === 'not-configured') && status.notifications.email && <button className="text-button" onClick={async () => { try { await api(`/monitors/${item.monitor.id}/confirmation`, { method: 'POST' }); setMonitors((await api<{ monitors: MonitorSummary[] }>("/monitors")).monitors); } catch (error) { setError((error as Error).message); } }}>Tentar enviar confirmação</button>}</p>}
                               <details className="monitor-secondary"><summary>Regra e histórico</summary>
                                 <div className="baseline-row"><span>Média de referência</span><strong>{item.baseline.mean !== null ? money(item.baseline.mean) : "Aguardando preços confirmados"}</strong></div>
                                 <p>Avisar com queda de {item.monitor.rule.dropPercent}% em {item.monitor.rule.windowDays} dias.</p>
@@ -1380,7 +1426,7 @@ Escolha uma viagem no mapa para começar.
           onClick={() => setHistoryId(null)}
         >
           <section
-            className="modal history-modal"
+            className="modal history-modal" ref={historyDialog}
             role="dialog"
             aria-modal="true"
             aria-labelledby="history-title"
@@ -1393,7 +1439,7 @@ Escolha uma viagem no mapa para começar.
               </div>
               <button
                 className="icon-button"
-                aria-label="Fechar histórico"
+                aria-label="Fechar janela do histórico"
                 onClick={() => setHistoryId(null)}
               >
                 <X size={20} />
@@ -1432,6 +1478,7 @@ Escolha uma viagem no mapa para começar.
                 reserva.
               </span>
             </div>
+            <div className="modal-actions history-actions"><button className="button button-secondary" onClick={() => setHistoryId(null)}>Fechar histórico</button></div>
           </section>
         </div>
       )}
@@ -1501,6 +1548,8 @@ function HistoryItem({ observation, adults }: { observation: Observation; adults
           {timestamp ? dateTime(timestamp) : "Consulta registrada"}
         </strong>
         <small>{offer?.title || "Preço observado na consulta"}</small>
+        {offer?.kind === 'flight' && <FlightFacts offer={offer} />}
+        {offer?.url && /^https:\/\//i.test(offer.url) && !needsPassengerRecheck(offer, adults) && <a className="text-button" href={offer.url} target="_blank" rel="noopener noreferrer">Ver passagem<ExternalLink size={14} /></a>}
       </div>
       <div className="history-fare"><strong>{offer && needsPassengerRecheck(offer, adults) ? "Reconsultar passageiros" : typeof price === "number" ? money(price) : "Sem oferta disponível"}</strong><small>{offer ? presentFare(offer, adults).context : 'Total não confirmado'}</small></div>
     </article>

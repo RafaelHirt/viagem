@@ -7,7 +7,9 @@ export interface GeoArea {
 
 export type TravelMode = 'train' | 'car' | 'flight'
 export interface TripPlan {
+  /** Legacy fixed entry, preserved when reading old alerts. */
   startAirport?: string
+  requiredAirport?: string
   countryCount: number
   areas: GeoArea[]
   countryCodes: string[]
@@ -27,6 +29,8 @@ export interface TripLeg {
   distanceKm: number
   minMinutes: number
   maxMinutes: number
+  basis?: 'rail-reference' | 'geographic-estimate'
+  sourceUrl?: string
 }
 export interface TripPreview {
   transport: TravelMode
@@ -39,9 +43,12 @@ export interface TripPreview {
 
 export interface FlightQuery {
   origin: string
+  originAirports?: string[]
   destination: string
   arrivalAirport?: string
+  arrivalAirports?: string[]
   departureAirport?: string
+  departureAirports?: string[]
   departureDate?: string
   returnDate?: string
   startMonth?: string
@@ -91,6 +98,7 @@ export interface Monitor {
   enabled: boolean
   createdAt: string
   criteriaVersion?: number
+  creationEmail?: { status: 'sent' | 'duplicate' | 'failed' | 'not-configured' | 'no-recipient'; attemptedAt: string }
 }
 
 export interface FlightSegment {
@@ -129,6 +137,9 @@ export interface Offer {
   arrivalAirport?: string
   departureAirport?: string
   airline?: string
+  airlineLogo?: string
+  searchedReturnAirports?: string[]
+  searchedHomeAirports?: string[]
   url?: string
   details: string[]
   observedAt: string

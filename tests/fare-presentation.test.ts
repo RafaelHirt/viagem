@@ -51,7 +51,7 @@ describe('observed itinerary presentation', () => {
     expect(result.route).toContain('Goiânia (GYN) → Paris (CDG)')
     expect(result.dates).toBe('Ida 10/03/2027 · volta prevista 21/03/2027')
     expect(result.duration).toBe('11 dias previstos')
-    expect(result.returnNotice).toBe('Volta solicitada; voo ainda não selecionado')
+    expect(result.returnNotice).toBe('Horários da volta a confirmar')
     expect(presentFlightFacts(offer).returnNotice).toBe('Volta ainda não confirmada')
   })
 
@@ -78,7 +78,7 @@ describe('observed itinerary presentation', () => {
     const result = presentFlightFacts({ ...offer, departureAirport: 'MAD', itineraryStatus: 'outbound-only' })
     expect(result.route).toContain('Paris (CDG)')
     expect(result.returnRoute).toContain('(MAD) → Goiânia (GYN)')
-    expect(result.returnNotice).toBe('Volta solicitada; voo ainda não selecionado')
+    expect(result.returnNotice).toBe('Horários da volta a confirmar')
     expect(result.legs).toEqual([])
   })
 

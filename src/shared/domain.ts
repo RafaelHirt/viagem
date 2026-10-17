@@ -172,9 +172,19 @@ function optionalTripPlan(value: unknown): TripPlan | undefined {
   if (typeof plan.maxLegHours !== 'number' || !Number.isFinite(plan.maxLegHours) || plan.maxLegHours < 1 || plan.maxLegHours > 48) throw new Error('O limite por trecho deve estar entre 1 e 48 horas.')
   const flexibleOrder = boolean(plan.flexibleOrder, 'se a ordem dos países é livre')
   if (!flexibleOrder && plan.countryCodes.length !== countryCount) throw new Error('Escolha todos os países para fixar a ordem do roteiro.')
+  const requiredAirport = optionalIata(plan.requiredAirport)
+  if (requiredAirport && !findAirport(requiredAirport)) throw new Error('Selecione a cidade obrigatória na lista.')
   const startAirport = optionalIata(plan.startAirport)
   if (startAirport && !findAirport(startAirport)) throw new Error('Selecione a primeira cidade do roteiro na lista de aeroportos.')
-  return { ...(startAirport ? { startAirport } : {}), countryCount, areas, countryCodes: [...plan.countryCodes] as string[], transport: plan.transport as TripPlan['transport'], maxLegHours: plan.maxLegHours, flexibleOrder }
+  return { ...(requiredAirport ? { requiredAirport } : {}), ...(startAirport ? { startAirport } : {}), countryCount, areas, countryCodes: [...plan.countryCodes] as string[], transport: plan.transport as TripPlan['transport'], maxLegHours: plan.maxLegHours, flexibleOrder }
+}
+
+function optionalAirports(value: unknown, primary: string | undefined): string[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || !value.length || value.length > 6) throw new Error('Escolha de um a seis aeroportos válidos.')
+  const codes = value.map(code => parseIata(code))
+  if (codes.some(code => !findAirport(code)) || new Set(codes).size !== codes.length || !primary || !codes.includes(primary)) throw new Error('Escolha de um a seis aeroportos válidos, incluindo o aeroporto principal.')
+  return codes.sort()
 }
 
 function flightQuery(value: unknown): FlightQuery {
@@ -203,6 +213,11 @@ function flightQuery(value: unknown): FlightQuery {
   const allowOpenJaw = boolean(query.allowOpenJaw, 'se permite aeroportos diferentes na chegada e na saída')
   const arrivalAirport = optionalIata(query.arrivalAirport)
   const departureAirport = optionalIata(query.departureAirport)
+  const origin = parseIata(query.origin)
+  const originAirports = optionalAirports(query.originAirports, origin)
+  const arrivalAirports = optionalAirports(query.arrivalAirports, arrivalAirport)
+  const departureAirports = optionalAirports(query.departureAirports, departureAirport)
+  if (!allowOpenJaw && departureAirports) throw new Error('Ative a escolha de aeroportos de volta para comparar opções diferentes.')
   if (!allowOpenJaw && arrivalAirport && departureAirport && arrivalAirport !== departureAirport) {
     throw new Error('Ative aeroportos diferentes para chegar e sair por locais distintos.')
   }
@@ -225,15 +240,15 @@ function flightQuery(value: unknown): FlightQuery {
   const tripPlan = optionalTripPlan(query.tripPlan)
   if (area && tripPlan) throw new Error('Escolha uma área simples ou um roteiro com vários países.')
   if (tripPlan?.startAirport && arrivalAirport && tripPlan.startAirport !== arrivalAirport) throw new Error('O aeroporto de chegada deve ser a primeira cidade do roteiro.')
-  for (const code of [arrivalAirport, departureAirport, tripPlan?.startAirport].filter((code): code is string => Boolean(code))) {
+  for (const code of [...(arrivalAirports || [arrivalAirport]), ...(departureAirports || [departureAirport]), tripPlan?.startAirport, tripPlan?.requiredAirport].filter((code): code is string => Boolean(code))) {
     const airport = findAirport(code)
     if (area && (!airport || !isAirportInArea(airport, area))) throw new Error('Os aeroportos de chegada e volta precisam estar dentro da área marcada.')
     if (tripPlan && (!airport || !tripPlan.areas.some(area => isAirportInArea(airport, area)))) throw new Error('A primeira cidade e o aeroporto de volta precisam estar nas áreas do roteiro.')
   }
   return {
-    origin: parseIata(query.origin),
+    origin: originAirports?.[0] || origin, ...(originAirports ? { originAirports } : {}), ...(arrivalAirports ? { arrivalAirports } : {}), ...(departureAirports ? { departureAirports } : {}),
     destination: text(query.destination, 'um destino ou região'),
-    arrivalAirport: arrivalAirport || tripPlan?.startAirport, departureAirport, departureDate, returnDate,
+    arrivalAirport: arrivalAirports?.[0] || arrivalAirport || tripPlan?.startAirport, departureAirport: departureAirports?.[0] || departureAirport, departureDate, returnDate,
     startMonth, endMonth, departureWeekdays, returnWeekdays,
     minDays, maxDays,
     horizonMonths: integer(query.horizonMonths, 'O horizonte da pesquisa', 1, 12),

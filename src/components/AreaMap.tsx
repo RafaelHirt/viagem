@@ -5,7 +5,7 @@ import { feature } from 'topojson-client'
 import type { GeometryCollection, Topology } from 'topojson-specification'
 import world from 'world-atlas/countries-110m.json'
 import { LocateFixed, Maximize2, Minus, Move, Plus, RotateCcw } from 'lucide-react'
-import type { GeoArea, TripPreview } from '../shared/types'
+import type { GeoArea, TripPreview, TripStop } from '../shared/types'
 import { formatLeg } from '../shared/trip-planner'
 import { AIRPORTS, REGIONS, findAirport, isAirportInArea } from '../shared/airports'
 import './area-map.css'
@@ -21,6 +21,8 @@ interface AreaMapProps {
   tripPreview?: TripPreview
   readOnly?: boolean
   heading?: string
+  connectionStops?: TripStop[]
+  connectionAnchor?: TripStop
 }
 
 const WIDTH = 900
@@ -94,7 +96,7 @@ function clampRadius(radius: number) {
   return Math.min(MAX_RADIUS, Math.max(MIN_RADIUS, Math.round(radius / 25) * 25))
 }
 
-export default function AreaMap({ value, onChange, region, focusAirport, otherAreas = [], onSelectArea, areaNumber, tripPreview, readOnly = false, heading }: AreaMapProps) {
+export default function AreaMap({ value, onChange, region, focusAirport, otherAreas = [], onSelectArea, areaNumber, tripPreview, readOnly = false, heading, connectionStops, connectionAnchor }: AreaMapProps) {
   const [camera, setCamera] = useState<Camera>(() => regionCamera(region, focusAirport, value))
   const [dragging, setDragging] = useState(false)
   const [unitsPerPixel, setUnitsPerPixel] = useState(1)
@@ -156,7 +158,7 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
     const points = AIRPORTS.flatMap((airport) => {
       const point = projection([airport.lon, airport.lat])
       if (!point || point[0] < 10 || point[0] > WIDTH - 10 || point[1] < 10 || point[1] > HEIGHT - 10) return []
-      return [{ airport, point, inside: (!!value && isAirportInArea(airport, value)) || otherAreas.some(item => isAirportInArea(airport, item.area)) }]
+      return [{ airport, point, inside: connectionStops ? connectionStops.some(city => city.airportCode === airport.code) || connectionAnchor?.airportCode === airport.code : (!!value && isAirportInArea(airport, value)) || otherAreas.some(item => isAirportInArea(airport, item.area)) }]
     })
     // Keep the map legible when the world is in view. The area count still uses the complete catalog.
     const occupied = new Set<string>()
@@ -166,7 +168,7 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
       occupied.add(cell)
       return true
     }).slice(0, 150)
-  }, [projection, value, otherAreas])
+  }, [projection, value, otherAreas, connectionStops, connectionAnchor])
 
   const cityLabels = useMemo(() => {
     const airports = [...REFERENCE_AIRPORTS.flatMap(code => findAirport(code) ?? []), ...includedAirports]
@@ -299,12 +301,10 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
               <path d={path(geoCircle().center([area.lon, area.lat]).radius(area.radiusKm / EARTH_RADIUS_KM * 180 / Math.PI)()) ?? undefined} />
             </g>)}
             {areaPath && <path d={areaPath} className={`area-map-selection ${readOnly ? 'is-read-only' : ''}`} />}
+            {connectionAnchor && connectionStops?.map(city => <path key={`connection-${city.airportCode}`} className="area-map-connection" d={path({type:'LineString',coordinates:[[connectionAnchor.lon,connectionAnchor.lat],[city.lon,city.lat]]}) || undefined}><title>{connectionAnchor.city} ↔ {city.city} · conexão de referência</title></path>)}
             {tripPreview?.status === 'ready' && tripPreview.stops.slice(1).map((destination, index) => {
-              const origin = tripPreview.stops[index], midpoint = projection([(origin.lon + destination.lon) / 2, (origin.lat + destination.lat) / 2])
-              return <g key={`route-${index}`} className="area-map-route">
-                <path d={path({ type: 'LineString', coordinates: [[origin.lon, origin.lat], [destination.lon, destination.lat]] }) ?? undefined} />
-                {midpoint && <text x={midpoint[0]} y={midpoint[1] - 12}>{formatLeg(tripPreview.legs[index])}</text>}
-              </g>
+              const origin = tripPreview.stops[index]
+              return <g key={`route-${index}`} className="area-map-route"><path d={path({ type: 'LineString', coordinates: [[origin.lon, origin.lat], [destination.lon, destination.lat]] }) ?? undefined} /></g>
             })}
             {markers.map(({ airport, point, inside }) => (
               <g key={airport.code} className={`area-map-airport ${inside ? 'is-inside' : ''}`}>
@@ -315,6 +315,7 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
             {cityLabels.map(({ code, city, point }) => (
               <text key={`label-${code}`} x={point[0] + 9} y={point[1] - 9} className="area-map-city-label">{city}</text>
             ))}
+            {tripPreview?.status === 'ready' && tripPreview.stops.map((city,index) => {const point=projection([city.lon,city.lat]);return point && <g key={`stop-${index}`} className="area-map-route-stop"><circle cx={point[0]} cy={point[1]} r={10*unitsPerPixel}/><text x={point[0]} y={point[1]+4*unitsPerPixel} style={{fontSize:12*unitsPerPixel}}>{index+1}</text><title>{index+1}. {city.city}</title></g>})}
             {otherAreas.map(({ area, index }) => { const center = projection([area.lon, area.lat]); return center && <g key={`badge-${index}`} data-other-area={index} className="area-map-area-badge"><circle cx={center[0]} cy={center[1]} r={12} /><text x={center[0]} y={center[1] + 4}>{index + 1}</text></g> })}
             {areaCenter && <g className="area-map-center">
               <circle cx={areaCenter[0]} cy={areaCenter[1]} r={8} />

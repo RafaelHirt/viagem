@@ -1,17 +1,21 @@
 import { useEffect, useId, useState } from 'react';
 import { findAirport, shortAirportLabel, searchAirports } from '../shared/airports';
+import { airportOptions } from '../shared/airport-options';
 
-export default function AirportAutocomplete({ value, onChange, label, placeholder = 'Ex.: Goiânia ou São Paulo', optional = false }: {
-  value: string; onChange: (code: string) => void; label: string; placeholder?: string; optional?: boolean;
+export default function AirportAutocomplete({ value, onChange, label, placeholder = 'Ex.: Goiânia ou São Paulo', optional = false, cityOnly = false }: {
+  value: string; onChange: (code: string) => void; label: string; placeholder?: string; optional?: boolean; cityOnly?: boolean;
 }) {
   const id = useId();
-  const [text, setText] = useState(value ? shortAirportLabel(value) : '');
+  const cityName = (code: string) => airportOptions(code)?.name || findAirport(code)?.city.split(' (')[0] || code;
+  const displayLabel = (code: string) => cityOnly ? cityName(code) : shortAirportLabel(code);
+  const [text, setText] = useState(value ? displayLabel(value) : '');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
-  useEffect(() => { if (value) setText(shortAirportLabel(value)); }, [value]);
-  const options = searchAirports(text, 8);
+  useEffect(() => { if (value) setText(displayLabel(value)); }, [value, cityOnly]);
+  const matches = searchAirports(text, cityOnly ? 32 : 8);
+  const options = cityOnly ? [...new Map(matches.map(airport => [cityName(airport.code), findAirport(airportOptions(airport.code)?.codes[0] || airport.code)!])).values()].slice(0,8) : matches;
   function select(code: string) {
-    onChange(code); setText(shortAirportLabel(code)); setOpen(false); setActive(-1);
+    onChange(code); setText(displayLabel(code)); setOpen(false); setActive(-1);
   }
   return <div className="field autocomplete-field">
     <label htmlFor={id}>{label}{optional ? ' (opcional)' : ''}</label>
@@ -28,11 +32,11 @@ export default function AirportAutocomplete({ value, onChange, label, placeholde
         }} />
       {open && <ul className="autocomplete-options" id={`${id}-options`} role="listbox" aria-label={`Sugestões: ${label}`}>
         {options.map((airport, index) => <li key={airport.code} id={`${id}-${index}`} role="option" aria-selected={active === index} onMouseDown={e => e.preventDefault()} onClick={() => select(airport.code)} className={active === index ? 'active' : ''}>
-          <strong>{airport.city} <span>· {airport.country}</span></strong><small>{airport.name} · {airport.code}</small>
+          <strong>{cityOnly ? cityName(airport.code) : airport.city} <span>· {airport.country}</span></strong>{!cityOnly && <small>{airport.name} · {airport.code}</small>}
         </li>)}
         {!options.length && <li className="autocomplete-empty">{text.trim() ? 'Nenhum aeroporto encontrado no catálogo. Tente uma cidade próxima.' : 'Comece a digitar uma cidade ou nome de aeroporto.'}</li>}
       </ul>}
     </div>
-    {!(value && findAirport(value)) && <small>Digite uma cidade e selecione um aeroporto da lista.</small>}
+    {!(value && findAirport(value)) && <small>{cityOnly ? 'Digite e selecione a cidade que não pode faltar.' : 'Digite uma cidade e selecione um aeroporto da lista.'}</small>}
   </div>;
 }

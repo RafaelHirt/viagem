@@ -54,3 +54,15 @@ describe('travel dates and stored preferences', () => {
     expect(flightQueryFromDraft(flightDraftFromQuery(longer))).toEqual(longer)
   })
 })
+
+describe('alternative airports in an editable search',()=>{
+ it('preserves airport selections through form editing and rejects stale, duplicate or out-of-area alternatives',()=>{
+  const original={...query,origin:'GIG',originAirports:['GIG','SDU'],arrivalAirport:'CDG',arrivalAirports:['CDG','ORY'],departureAirport:'MXP',departureAirports:['MXP','LIN']}
+  expect(flightQueryFromDraft(flightDraftFromQuery(original))).toEqual(original)
+  const validated=validateMonitor({...input({}),query:original}).query as FlightQuery
+  expect(validated.originAirports).toEqual(['GIG','SDU']);expect(validated.arrivalAirports).toEqual(['CDG','ORY'])
+  expect(()=>validateMonitor({...input({}),query:{...original,originAirports:['SDU']}})).toThrow('principal')
+  expect(()=>validateMonitor({...input({}),query:{...original,arrivalAirports:['CDG','CDG']}})).toThrow()
+  expect(()=>validateMonitor({...input({}),query:{...original,departureAirport:undefined,departureAirports:undefined,area:{lat:48.8,lon:2.3,radiusKm:100},arrivalAirports:['CDG','LHR']}})).toThrow('dentro da área')
+ })
+})

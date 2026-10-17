@@ -73,3 +73,18 @@
 .trip-map-options > summary, .trip-model-explanation > summary { cursor: pointer; }
 .trip-map-options p, .trip-model-explanation p { margin: 12px 0; }
 .trip-map-options .trip-area-tabs { margin-top: 14px; }
+.trip-intro p, .trip-fare-note, .trip-model-explanation, .trip-map-options, .trip-estimate-note { font-size:13px; color:#53665d; }
+.rail-connections { margin:20px 0 14px; padding:16px 18px; border:1px solid #b3cbbb; border-radius:9px; color:#244d38; background:#eef6ec; font-size:14px; }
+.rail-connections p { margin-top:7px; line-height:1.7; }
+.trip-route-options { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin:16px 0; }
+.trip-route-options button { display:flex; flex-direction:column; gap:8px; align-items:flex-start; text-align:left; padding:16px; border:1px solid #bdcec0; border-radius:9px; background:#fff; color:#344f42; font-size:14px; }
+.trip-route-options button[aria-pressed=true] { border:2px solid #176b56; padding:15px; background:#f0f7ec; }
+.trip-route-options small { color:#53665d; font-size:12px; }
+.trip-summary-heading span, .trip-stop small, .trip-leg, .trip-leg small { font-size:13px; color:#53665d; }
+.trip-stop strong { font-size:15px; }
+.trip-leg a { text-decoration:underline; }
+.area-map-connection { fill:none; stroke:#3c9977; stroke-width:1.5; stroke-dasharray:4 4; opacity:.6; pointer-events:none; }
+.area-map-route path { stroke:#174e39; stroke-width:3; stroke-dasharray:none; }
+.area-map-route-stop { pointer-events:none; }
+.area-map-route-stop circle { fill:#176b56; stroke:white; stroke-width:2; }
+.area-map-route-stop text { fill:#fff; text-anchor:middle; font-weight:700; }

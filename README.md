@@ -30,9 +30,12 @@ Consulte [Publicação e configuração](docs/DEPLOY.md) para as variáveis de f
 
 ## O que esta primeira versão faz
 
-- Buscar passagens em um único fluxo e criar um alerta a partir do resultado, sem preencher a viagem novamente. Os hotéis permanecem indisponíveis enquanto o conector não estiver pronto.
+- Buscar passagens em um único fluxo, definir o alerta durante o preenchimento ou criá-lo depois do resultado, sem repetir a viagem. Os hotéis permanecem indisponíveis enquanto o conector não estiver pronto.
+- Comparar aeroportos alternativos da mesma cidade na mesma consulta (como Galeão/Santos Dumont e Charles de Gaulle/Orly).
+- Ordenar resultados, distinguir horários/escalas, remover duplicações comprovadas e mostrar logos fornecidos pela fonte.
+- Enviar confirmação de cadastro por e-mail quando o transporte estiver configurado, com controle de duplicidade.
 - Encontrar aeroportos digitando cidade ou nome, escolher regiões sugeridas e marcar uma área circular no mapa, sem precisar conhecer códigos ou estimar quilômetros.
-- Planejar roteiros por dois a cinco países a partir de uma cidade escolhida, com área ajustável, países livres ou obrigatórios e faixas indicativas de tempo por trecho. A prévia geográfica não consulta rotas reais ou preços internos.
+- Planejar roteiros por dois a cinco países incluindo uma cidade obrigatória em qualquer posição, com área ajustável, países livres ou obrigatórios e faixas indicativas de tempo por trecho. A prévia ferroviária europeia usa conexões de referência com limite por trecho; horários atuais e preços internos não são consultados.
 - Explorar passagens com datas exatas ou descobrir ofertas com duração variável; apresenta a cobertura retornada, sem inventar preços.
 - Consultar itinerários com cidades de chegada e saída diferentes em datas definidas e validar a distância entre aeroportos conhecidos.
 - Salvar a busca concluída e seu preço no alerta sem consumir outra consulta, usando o resultado guardado no servidor; editar, pausar, consultar e excluir alertas com persistência.
@@ -62,3 +65,5 @@ A coleta agendada começa desativada. E-mail e Telegram têm transportes impleme
 - [Busca de hotéis e pré-requisitos Booking](docs/HOTEIS.md).
 - [Origem e licença dos dados geográficos](docs/DADOS-GEOGRAFICOS.md).
 - [Roteiros e método das estimativas de tempo](docs/ROTEIROS.md).
+
+- [Revisão de UX, slogan e monetização](docs/UX-E-PRODUTO.md).

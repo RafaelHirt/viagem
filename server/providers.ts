@@ -5,6 +5,9 @@ import { AIRPORTS, isAirportInArea, matchesRegion, REGIONS, searchAirports } fro
 import { airportInTrip, countriesInAreas, previewTrip } from '../src/shared/trip-planner.ts';
 import { flightWindow, matchesTravelDates, sampleTravelDates } from '../src/shared/flight-dates.ts';
 import { linkedAdults } from './flight-passengers.ts';
+import { railTripOptions } from '../src/shared/rail-network.ts';
+import { queryAirports } from '../src/shared/airport-options.ts';
+import { uniqueOffers } from '../src/shared/offer-results.ts';
 
 /** Only safe, user-facing messages cross the API boundary. */
 export class ProviderError extends Error {
@@ -154,7 +157,7 @@ function enforceArea(query: FlightQuery, entry: string, exit: string): void {
     if (preview.status !== 'ready') throw new ProviderError('INVALID_TRIP_PLAN', preview.message, 400);
   }
   if (!query.area) return;
-  for (const code of [entry, exit]) {
+  for (const code of [...new Set([entry, exit, ...queryAirports(query, 'arrival'), ...queryAirports(query, 'departure')])]) {
     const airport = findAirport(code);
     if (!airport || !isAirportInArea(airport, query.area)) {
       throw new ProviderError('AIRPORT_OUTSIDE_AREA', 'Os aeroportos de chegada e retorno precisam ficar dentro da área marcada no mapa.', 400);
@@ -180,7 +183,7 @@ function normalizeExact(data: Json, query: FlightQuery, entry: string): Offer[] 
   // Links without a verifiable passenger list can reopen with Google's default
   // of one adult. Do not offer that shortcut for a group search.
   const url = query.adults === 1 || linkedAdults(sourceUrl) === query.adults ? sourceUrl : undefined;
-  return [...array(data.best_flights), ...array(data.other_flights)].flatMap((value): Offer[] => {
+  return uniqueOffers([...array(data.best_flights), ...array(data.other_flights)].flatMap((value): Offer[] => {
     const candidate = record(value);
     const segments = array(candidate.flights).map(record);
     const first = segments[0];
@@ -189,22 +192,28 @@ function normalizeExact(data: Json, query: FlightQuery, entry: string): Offer[] 
     if (!first || !last || price === undefined) return [];
     const actualOrigin = string(record(first.departure_airport).id);
     const actualArrival = string(record(last.arrival_airport).id);
-    if (actualOrigin !== query.origin || actualArrival !== entry) return [];
+    if (!queryAirports(query, 'origin').includes(actualOrigin) || !(queryAirports(query, 'arrival').length ? queryAirports(query, 'arrival') : [entry]).includes(actualArrival)) return [];
     const flightDate = string(record(first.departure_airport).time).slice(0, 10);
     if (flightDate && flightDate !== query.departureDate) return [];
     const airlines = [...new Set(segments.map((segment) => string(segment.airline)).filter(Boolean))];
     const extensions = array(candidate.extensions).filter((item): item is string => typeof item === 'string').slice(0, 8);
     return [{
-      id: randomUUID(), kind: 'flight', title: `${findAirport(query.origin)?.city.split(' (')[0] || query.origin} → ${findAirport(entry)?.city.split(' (')[0] || entry}`, price, currency: 'BRL',
+      id: randomUUID(), kind: 'flight', title: `${findAirport(actualOrigin)?.city.split(' (')[0] || actualOrigin} → ${findAirport(actualArrival)?.city.split(' (')[0] || actualArrival}`, price, currency: 'BRL',
       passengers: query.adults, passengerValidation: 'source-verified', priceBasis: 'unknown', itineraryStatus: 'outbound-only',
       flightLegs: [{ direction: 'outbound', segments: flightSegments(segments), durationMinutes: positive(candidate.total_duration), stops: Math.max(0, segments.length - 1) }],
       outboundDate: query.departureDate, returnDate: query.returnDate, origin: actualOrigin,
-      arrivalAirport: actualArrival, departureAirport: query.departureAirport || entry,
-      airline: airlines.join(' + ') || undefined, url, observedAt, provider: 'SerpApi · Google Flights', confirmed: false,
+      arrivalAirport: actualArrival, departureAirport: query.departureAirport || actualArrival, searchedReturnAirports: queryAirports(query, 'departure').length ? queryAirports(query, 'departure') : queryAirports(query, 'arrival'), searchedHomeAirports: queryAirports(query, 'origin'),
+      airline: airlines.join(' + ') || undefined, airlineLogo: airlineLogo(candidate.airline_logo || first.airline_logo), url, observedAt, provider: 'SerpApi · Google Flights', confirmed: false,
       details: [`${query.adults} adulto(s) na pesquisa`, 'Tarifa inicial; seleção do retorno e condições pendentes',
         ...(query.departureAirport && query.departureAirport !== entry ? [`Saída solicitada por ${query.departureAirport}; próximo trecho ainda não confirmado`] : []), ...extensions],
     }];
-  }).sort((a, b) => a.price - b.price);
+  })).sort((a, b) => a.price - b.price);
+}
+
+function airlineLogo(value: unknown): string | undefined {
+  const url = httpsLink(value);
+  if (!url) return undefined;
+  return new URL(url).hostname === 'www.gstatic.com' ? url : undefined;
 }
 
 function matchesDestination(deal: Json, query: FlightQuery): boolean {
@@ -213,6 +222,7 @@ function matchesDestination(deal: Json, query: FlightQuery): boolean {
   if (query.area && (!airport || !isAirportInArea(airport, query.area))) return false;
   if (query.tripPlan && (!airport || !airportInTrip(airport, query.tripPlan))) return false;
   const requiredAirport = exactEntry(query) || (!query.allowOpenJaw ? query.departureAirport : undefined);
+  if (queryAirports(query, 'arrival').length) return queryAirports(query, 'arrival').includes(code);
   if (requiredAirport) return code === requiredAirport;
   // In map mode the circle is the destination. Its human label is not a
   // second geographical filter (and may cross country/region borders).
@@ -242,19 +252,33 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
   const warnings = conditionsWarnings(query);
   if (query.departureDate && query.returnDate) {
     const entry = exactEntry(query);
+    if (!entry && query.tripPlan?.requiredAirport) {
+      const options = query.tripPlan.transport === 'train' ? railTripOptions(query.tripPlan) : [previewTrip(query.tripPlan)].filter(item => item.status === 'ready');
+      const attempts = await Promise.allSettled(options.slice(0, 3).map(option => exploreFlight({ ...query, arrivalAirport: option.stops[0].airportCode,
+        departureAirport: query.departureAirport || (query.allowOpenJaw ? option.stops.at(-1)!.airportCode : option.stops[0].airportCode) }, budget, true)));
+      const successful = attempts.flatMap(attempt => attempt.status === 'fulfilled' ? attempt.value.offers : []);
+      if (!successful.length && attempts.every(attempt => attempt.status === 'rejected')) {
+        const failed = attempts.find(attempt => attempt.status === 'rejected');
+        if (failed?.status === 'rejected') throw failed.reason;
+      }
+      return { offers: uniqueOffers(successful).sort((a,b)=>a.price-b.price), coverage: { complete:false,queries:attempts.length,description:'Datas exatas mantidas; aeroportos de entrada e saída amostrados entre roteiros que incluem a cidade obrigatória.' }, warnings };
+    }
     if (!entry) throw new ProviderError('EXACT_AIRPORT_REQUIRED', 'Para consultar datas exatas, informe o aeroporto de chegada. Deixe as datas livres para explorar uma região.', 400);
     const exit = query.departureAirport || entry;
-    const openJaw = exit !== entry;
+    const originIds = queryAirports(query, 'origin').join(',');
+    const entryIds = (queryAirports(query, 'arrival').length ? queryAirports(query, 'arrival') : [entry]).join(',');
+    const exitIds = queryAirports(query, 'departure').length ? queryAirports(query, 'departure').join(',') : entryIds;
+    const openJaw = exitIds !== entryIds;
     enforceArea(query, entry, exit);
     // Include the entry inferred from destination in the preflight distance check.
     enforceDistance({ ...query, arrivalAirport: entry, departureAirport: exit });
     const parameters: Record<string, string> = openJaw ? {
       ...base, engine: 'google_flights', type: '3',
       multi_city_json: JSON.stringify([
-        { departure_id: query.origin, arrival_id: entry, date: query.departureDate },
-        { departure_id: exit, arrival_id: query.origin, date: query.returnDate },
+        { departure_id: originIds, arrival_id: entryIds, date: query.departureDate },
+        { departure_id: exitIds, arrival_id: originIds, date: query.returnDate },
       ]),
-    } : { ...base, engine: 'google_flights', type: '1', departure_id: query.origin, arrival_id: entry, outbound_date: query.departureDate, return_date: query.returnDate };
+    } : { ...base, engine: 'google_flights', type: '1', departure_id: originIds, arrival_id: entryIds, outbound_date: query.departureDate, return_date: query.returnDate };
     const data = await requestSerpApi({ ...parameters, deep_search: 'true' }, budget, fallback ? FALLBACK_TIMEOUT_MS : EXACT_TIMEOUT_MS);
     verifyCurrency(data);
     verifyPassengers(data, query.adults);
@@ -264,7 +288,7 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
     return { offers, coverage: { complete: !query.tripPlan, description: 'Uma combinação de aeroportos e datas consultada. Os valores são candidatos e ainda não têm retorno e opções de reserva confirmados. Deslocamentos entre países não estão cotados.', queries: 1 }, warnings };
   }
   const entry = exactEntry(query);
-  const fixedOpenJaw = Boolean(query.departureAirport && query.allowOpenJaw && (!entry || entry !== query.departureAirport));
+  const fixedOpenJaw = Boolean(query.departureAirport && query.allowOpenJaw && (!entry || queryAirports(query, 'departure').join(',') !== (queryAirports(query, 'arrival').length ? queryAirports(query, 'arrival') : [entry]).join(',')));
   const startDate = window.start;
   const endDate = window.end;
   const start = new Date(`${startDate}T00:00:00Z`);
@@ -275,7 +299,7 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
   let discoveryFailure: ProviderError | undefined;
   if (!fixedOpenJaw) {
     try {
-      data = await requestSerpApi({ ...base, engine: 'google_flights_deals', type: '1', departure_id: query.origin,
+      data = await requestSerpApi({ ...base, engine: 'google_flights_deals', type: '1', departure_id: queryAirports(query, 'origin').join(','),
         outbound_date: `${startDate},${endDate}`, query: discoveryText(query) }, budget, DISCOVERY_TIMEOUT_MS);
       verifyCurrency(data);
       if (query.adults === 1) verifyPassengers(data, 1);
@@ -297,11 +321,11 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
     const returnDate = dateOnly(deal.end_date || deal.return_date);
     const duration = daysBetween(outboundDate, returnDate);
     const airport = string(deal.arrival_airport_code).toUpperCase();
-    if (price === undefined || !outboundDate || !returnDate || outboundDate < startDate || outboundDate > endDate || !Number.isInteger(duration) || !matchesTravelDates(query, outboundDate, returnDate) || string(deal.departure_airport_code).toUpperCase() !== query.origin || !/^[A-Z]{3}$/.test(airport) || !matchesDestination(deal, query)) { discarded++; return []; }
+    if (price === undefined || !outboundDate || !returnDate || outboundDate < startDate || outboundDate > endDate || !Number.isInteger(duration) || !matchesTravelDates(query, outboundDate, returnDate) || !queryAirports(query, 'origin').includes(string(deal.departure_airport_code).toUpperCase()) || !/^[A-Z]{3}$/.test(airport) || !matchesDestination(deal, query)) { discarded++; return []; }
     return [{ id: randomUUID(), kind: 'flight', title: `${findAirport(query.origin)?.city.split(' (')[0] || query.origin} → ${string(deal.name) || findAirport(airport)?.city || airport}`, price, currency: 'BRL',
       passengers: 1, ...(query.adults === 1 ? { passengerValidation: 'source-verified' as const } : {}), priceBasis: 'unknown', itineraryStatus: 'round-trip-dates',
       flightLegs: [{ direction: 'outbound', segments: [], durationMinutes: positive(deal.flight_duration), stops: nonnegativeInteger(deal.stops) }],
-      outboundDate, returnDate, origin: query.origin, arrivalAirport: airport, departureAirport: airport,
+      outboundDate, returnDate, origin: string(deal.departure_airport_code).toUpperCase(), arrivalAirport: airport, departureAirport: airport,
       airline: string(deal.airline) || undefined, url: httpsLink(deal.flight_link), details: [`${duration} dias`, `${query.adults} adulto(s) na pesquisa`, 'Chegada e saída pelo mesmo aeroporto; tarifa ainda não confirmada'],
       observedAt, provider: 'SerpApi · Google Flights Deals', confirmed: false }];
   }).sort((a, b) => a.price - b.price);
@@ -316,7 +340,7 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
   let combinations = 0;
   if (!offers.length) {
     const seeds = eligible.filter((candidate, index, all) => index === all.findIndex(other => other.arrivalAirport === candidate.arrivalAirport && other.outboundDate === candidate.outboundDate && other.returnDate === candidate.returnDate)).slice(0, 3);
-    const samples = query.adults > 1 && seeds.length ? seeds.map(candidate => ({ ...query, arrivalAirport: candidate.arrivalAirport, departureAirport: candidate.departureAirport, departureDate: candidate.outboundDate, returnDate: candidate.returnDate })) : sampleQueries(query, start, end);
+    const samples = query.adults > 1 && seeds.length ? seeds.map(candidate => ({ ...query, origin: candidate.origin!, originAirports: undefined, arrivalAirport: candidate.arrivalAirport, arrivalAirports: undefined, departureAirport: candidate.departureAirport, departureAirports: undefined, departureDate: candidate.outboundDate, returnDate: candidate.returnDate })) : sampleQueries(query, start, end);
     combinations = samples.length;
     const attempts = await Promise.allSettled(samples.map(sample => exploreFlight(sample, budget, true)));
     queries += samples.length;
@@ -362,7 +386,8 @@ function sampleQueries(query: FlightQuery, start: Date, end: Date): FlightQuery[
   const hubs = ['LIS', 'CDG', 'MAD', 'FCO', 'AMS', 'LHR', 'FRA', 'GRU', 'GIG', 'BSB', 'EZE', 'SCL', 'JFK', 'MIA', 'MEX', 'PTY', 'NRT', 'SIN', 'DXB', 'CAI', 'JNB', 'SYD'];
   const explicit = exactEntry(query);
   const accepted = (code: string) => code !== query.origin && matchesDestination({ arrival_airport_code: code }, { ...query, departureAirport: undefined });
-  let airports = explicit ? [explicit] : hubs.filter(accepted);
+  const railOptions = query.tripPlan?.requiredAirport && query.tripPlan.transport === 'train' ? railTripOptions(query.tripPlan) : [];
+  let airports = explicit ? [explicit] : railOptions.length ? [...new Set(railOptions.flatMap(option => [option.stops.at(-1)!.airportCode, option.stops[0].airportCode]))] : hubs.filter(accepted);
   if (!airports.length) airports = AIRPORTS.filter(airport => accepted(airport.code)).sort((a, b) => query.area ? haversineKm(a, query.area) - haversineKm(b, query.area) : a.code.localeCompare(b.code)).slice(0, 3).map(airport => airport.code);
   const datePairs = sampleTravelDates(query, start.toISOString().slice(0, 10), end.toISOString().slice(0, 10));
   return datePairs.flatMap((dates, index): FlightQuery[] => {

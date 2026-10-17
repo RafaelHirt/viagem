@@ -103,6 +103,19 @@ describe('real price provider adapter', () => {
     ]);
   });
 
+  it('searches both city airports in one request and validates the actual returned airports', async () => {
+    vi.mocked(fetch).mockResolvedValue(response({ ...fixedData, best_flights: [
+      { price: 2100, airline_logo: 'https://www.gstatic.com/flights/airline_logos/70px/LA.png', flights: [{departure_airport:{id:'SDU',time:'2027-03-10 13:00'},arrival_airport:{id:'ORY',time:'2027-03-11 09:00'},airline:'LATAM'}] },
+      { price: 1900, flights: [{departure_airport:{id:'CNF',time:'2027-03-10 13:00'},arrival_airport:{id:'ORY'}}] },
+      { price: 1800, flights: [{departure_airport:{id:'GIG',time:'2027-03-10 13:00'},arrival_airport:{id:'LHR'}}] },
+    ] }));
+    const result=await explore('flight',{...query,origin:'GIG',originAirports:['GIG','SDU'],arrivalAirport:'CDG',arrivalAirports:['CDG','ORY'],departureAirport:undefined});
+    expect(result.offers).toHaveLength(1);
+    expect(result.offers[0]).toMatchObject({origin:'SDU',arrivalAirport:'ORY',price:210000,airlineLogo:'https://www.gstatic.com/flights/airline_logos/70px/LA.png',searchedHomeAirports:['GIG','SDU'],searchedReturnAirports:['CDG','ORY']});
+    const params=new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams;
+    expect(params.get('departure_id')).toBe('GIG,SDU');expect(params.get('arrival_id')).toBe('CDG,ORY');expect(fetch).toHaveBeenCalledOnce();
+  });
+
   it.each([undefined, 1, 3])('rejects a two-adult quote when the source passenger count is %s', async adults => {
     vi.mocked(fetch).mockResolvedValue(response({ ...fixedData, search_parameters: { currency: 'BRL', adults } }));
     await expect(explore('flight', { ...query, adults: 2 })).rejects.toMatchObject({ code: 'PROVIDER_PASSENGER_MISMATCH' });
@@ -381,3 +394,20 @@ describe('date and airport restrictions reach the flight source', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+describe('exact dates with a mandatory city and free entry',()=>{
+  beforeEach(()=>{vi.stubEnv('SERPAPI_API_KEY','private-test-only');vi.stubGlobal('fetch',vi.fn());})
+  afterEach(()=>{vi.unstubAllEnvs();vi.unstubAllGlobals();})
+  it('keeps the exact dates while sampling entry and exit routes that contain Paris',async()=>{
+    const tripPlan={requiredAirport:'CDG',countryCount:3,areas:[{lat:48.8566,lon:2.3522,radiusKm:800}],countryCodes:[],transport:'train' as const,maxLegHours:3,flexibleOrder:true}
+    vi.mocked(fetch).mockImplementation(async input=>{
+      const params=new URL(String(input)).searchParams;
+      const legs=params.has('multi_city_json')?JSON.parse(params.get('multi_city_json')!):[{departure_id:params.get('departure_id'),arrival_id:params.get('arrival_id'),date:params.get('outbound_date')},{date:params.get('return_date')}];
+      expect(legs[0].date).toBe('2027-03-10');expect(legs[1].date).toBe('2027-03-21');
+      return response({search_parameters:{adults:2,currency:'BRL'},best_flights:[{price:5000,flights:[{departure_airport:{id:'GYN',time:'2027-03-10 09:00'},arrival_airport:{id:legs[0].arrival_id}}]}]});
+    });
+    const result=await explore('flight',{origin:'GYN',destination:'Roteiro por 3 países',minDays:11,maxDays:11,horizonMonths:12,adults:2,allowOpenJaw:true,departureDate:'2027-03-10',returnDate:'2027-03-21',tripPlan});
+    expect(result.offers.length).toBeGreaterThan(0);expect(result.coverage.queries).toBeLessThanOrEqual(3);
+    for(const offer of result.offers)expect(offer.tripPreview!.stops.some(stop=>stop.city==='Paris')).toBe(true)
+  })
+})

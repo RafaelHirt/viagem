@@ -11,7 +11,7 @@ export default function AlertFields({ value, onChange, emailAvailable, telegramA
     <details className="advanced-fields"><summary>Personalizar o aviso</summary>
       <div className="field-grid"><label className="field"><span>Avisar com queda de</span><div className="input-suffix"><input type="number" required min={1} max={90} value={value.dropPercent} onChange={event => update({ dropPercent: event.target.value })} /><span>%</span></div></label>
         <label className="field"><span>Comparar com a média de</span><select value={value.windowDays} onChange={event => update({ windowDays: event.target.value })}>{[7, 15, 30, 60, 90, 180].map(days => <option key={days} value={days}>{days} dias</option>)}</select></label></div>
-      <p className="wizard-hint">O aviso depende de histórico de preços confirmados e atualizações automáticas ativas.</p>
+      <p className="wizard-hint">A média usa o menor preço de cada dia de consulta com os mesmos critérios: viajantes, período, aeroportos e dias da semana. Selecionar 180 dias não cria um histórico retroativo. Avisos dependem de pelo menos 7 dias com preços confirmados e atualizações ativas.</p>
       {(telegramAvailable || value.telegram) && <label className="checkbox-label"><input type="checkbox" checked={value.telegram} onChange={event => update({ telegram: event.target.checked })} /><span>Receber também no Telegram conectado</span></label>}
     </details>
   </div>

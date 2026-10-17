@@ -3,6 +3,38 @@ import type { Monitor, Offer, Status } from '../src/shared/types.ts';
 import type { Baseline } from '../src/shared/domain.ts';
 import { getPriceDrop } from '../src/shared/domain.ts';
 import type { Storage } from './storage.ts';
+import { airportSetLabel } from '../src/shared/airport-options.ts';
+import { flightPeriodLabel, weekdayLabel } from '../src/shared/flight-dates.ts';
+import type { FlightQuery } from '../src/shared/types.ts';
+
+/** A creation receipt is independent of fare confirmation and historical price alerts. */
+export async function sendCreationConfirmation(storage: Storage, monitor: Monitor, appOrigin: string, fetcher: typeof fetch = fetch): Promise<NonNullable<Monitor['creationEmail']>> {
+  const attemptedAt = new Date().toISOString();
+  const receipt = (status: NonNullable<Monitor['creationEmail']>['status']) => ({ status, attemptedAt });
+  if (!monitor.channels.email) return receipt('no-recipient');
+  if (!getNotificationStatus().email) return receipt('not-configured');
+  const key = createHash('sha256').update(JSON.stringify(['monitor-created-v1', monitor.id, monitor.channels.email])).digest('hex');
+  const token = await storage.claimAlert(key);
+  if (!token) return receipt('duplicate');
+  const flight = monitor.query as FlightQuery;
+  const text = [`Seu alerta foi criado: ${monitor.name}`,
+    monitor.kind === 'flight' ? `${airportSetLabel(flight.origin, flight.originAirports)} → ${airportSetLabel(flight.arrivalAirport, flight.arrivalAirports) === 'Qualquer aeroporto' ? flight.destination : airportSetLabel(flight.arrivalAirport, flight.arrivalAirports)}` : 'Busca de hospedagem salva.',
+    `${monitor.query.adults} adulto(s)`,
+    monitor.kind === 'flight' ? `${flightPeriodLabel(flight)} · ${flight.minDays} a ${flight.maxDays} dias · ida ${weekdayLabel(flight.departureWeekdays)}, volta ${weekdayLabel(flight.returnWeekdays)}` : '',
+    `Regra: queda de ${monitor.rule.dropPercent}% em relação à média dos últimos ${monitor.rule.windowDays} dias de consultas comparáveis.`,
+    process.env.ENABLE_SCHEDULED_COLLECTION === 'true' ? 'Consultas automáticas ativadas. Avisos de queda dependem de preços confirmados e histórico suficiente.' : 'Atualização manual por enquanto. Esta mensagem confirma o cadastro; ainda não é um aviso de preço baixo.',
+    `${appOrigin}/?alert=${encodeURIComponent(monitor.id)}`,
+  ].filter(Boolean).join('\n');
+  let accepted = false;
+  try {
+    const response = await fetcher('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': key },
+      body: JSON.stringify({ from: process.env.ALERT_FROM_EMAIL, to: [monitor.channels.email], subject: `Partiu: alerta criado — ${monitor.name}`, text }), signal: AbortSignal.timeout(8_000) });
+    const result = await response.json() as { id?: unknown };
+    accepted = response.ok && typeof result.id === 'string';
+  } catch { /* A failed receipt never deletes the saved alert. */ }
+  await storage.finishAlert(key, token, accepted);
+  return receipt(accepted ? 'sent' : 'failed');
+}
 
 export interface Delivery {
   channel: 'email' | 'telegram';

@@ -5,7 +5,7 @@ import { getBaseline, getPriceDrop, validateMonitor } from '../src/shared/domain
 import { clearSessionCookie, createLoginLimiter, createSessionCookie, hasSession, isSameOrigin, passwordMatches } from './auth.ts';
 import { explore, getProviderStatus, ProviderError } from './providers.ts';
 import { suggestHotels } from './suggestions.ts';
-import { getNotificationStatus, sendNotifications } from './notifications.ts';
+import { getNotificationStatus, sendNotifications, sendCreationConfirmation } from './notifications.ts';
 import type { Delivery } from './notifications.ts';
 import type { Storage } from './storage.ts';
 import { createSearchJobStore } from './search-jobs.ts';
@@ -62,14 +62,19 @@ function minimumHistoryDays(): number {
   return Number.isInteger(value) && value >= 7 && value <= 365 ? value : 7;
 }
 
+function sameFareScope(first: Offer, second: Offer): boolean {
+  return first.provider === second.provider && first.currency === second.currency &&
+    (first.priceBasis || 'unknown') === (second.priceBasis || 'unknown') && first.passengers === second.passengers;
+}
+
 export async function summarizeMonitor(storage: Storage, monitor: Monitor): Promise<MonitorSummary> {
   const observations = (await storage.listObservations(monitor.id)).filter(observation => (observation.criteriaVersion ?? 0) === (monitor.criteriaVersion ?? 0));
   const latest = observations.sort((first, second) => second.observedAt.localeCompare(first.observedAt))[0] ?? null;
-  const comparable = observations.filter(observation => !needsPassengerRecheck(observation.offer, monitor.query.adults) && (!latest || observation.offer.provider === latest.offer.provider));
+  const comparable = observations.filter(observation => !needsPassengerRecheck(observation.offer, monitor.query.adults) && (!latest || sameFareScope(observation.offer, latest.offer)));
   const baseline = getBaseline(comparable, monitor.rule.windowDays);
   return {
     monitor,
-    baseline: { ...baseline, dropPercent: latest?.complete ? getPriceDrop(latest.price, baseline.mean) : null },
+    baseline: { ...baseline, dropPercent: latest?.complete && !needsPassengerRecheck(latest.offer, monitor.query.adults) && baseline.validDays >= minimumHistoryDays() ? getPriceDrop(latest.price, baseline.mean) : null },
     latest: latest?.offer ?? null,
   };
 }
@@ -81,6 +86,7 @@ export interface ApiOptions {
   search?: typeof explore;
   providerStatus?: typeof getProviderStatus;
   notify?: typeof sendNotifications;
+  confirmCreation?: typeof sendCreationConfirmation;
   hotelSuggestions?: typeof suggestHotels;
   searchJobs?: SearchJobStore;
   /** Only the separate Netlify background function awaits long-running work. */
@@ -88,6 +94,8 @@ export interface ApiOptions {
 }
 
 interface RunResult {
+  offers: Offer[];
+  search?: ExploreResult['search'];
   summary: MonitorSummary;
   coverage: ExploreResult['coverage'];
   warnings: string[];
@@ -103,7 +111,7 @@ async function runMonitor(storage: Storage, monitor: Monitor, search: typeof exp
   const offer = validOffers
     .sort((first, second) => first.price - second.price)[0];
   const observations = (await storage.listObservations(monitor.id)).filter(observation => (observation.criteriaVersion ?? 0) === (monitor.criteriaVersion ?? 0) && !needsPassengerRecheck(observation.offer, monitor.query.adults));
-  const baseline = getBaseline(offer ? observations.filter((observation) => observation.offer.provider === offer.provider) : observations, monitor.rule.windowDays);
+  const baseline = getBaseline(offer ? observations.filter((observation) => sameFareScope(observation.offer, offer)) : observations, monitor.rule.windowDays);
   const warnings = [...result.warnings];
   let deliveries: Delivery[] = [];
   if (offer) {
@@ -122,11 +130,11 @@ async function runMonitor(storage: Storage, monitor: Monitor, search: typeof exp
       warnings.push(`Alertas aguardam pelo menos ${minimumHistoryDays()} dias históricos válidos. Há ${baseline.validDays} dias disponíveis.`);
     }
   }
-  return { summary: await summarizeMonitor(storage, monitor), coverage: result.coverage, warnings, notifications: deliveries, found: validOffers.length, message: result.search?.message };
+  return { offers: validOffers, search: result.search, summary: await summarizeMonitor(storage, monitor), coverage: result.coverage, warnings, notifications: deliveries, found: validOffers.length, message: result.search?.message };
 }
 
 export function createApiHandler(options: ApiOptions): (request: Request) => Promise<Response> {
-  const { storage, development = false, search = explore, providerStatus = getProviderStatus, notify = sendNotifications, hotelSuggestions = suggestHotels } = options;
+  const { storage, development = false, search = explore, providerStatus = getProviderStatus, notify = sendNotifications, confirmCreation = sendCreationConfirmation, hotelSuggestions = suggestHotels } = options;
   const password = options.password ?? process.env.DASHBOARD_PASSWORD ?? (development ? 'viagem-local' : '');
   const configured = development ? password.length > 0 : password.length >= 12;
   const authConfiguration = configured ? 'ready' : password.length ? 'too-short' : 'missing';
@@ -254,6 +262,10 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
         for (const entry of monitors) await storage.saveMonitor(entry);
         if (seed) await storage.saveObservation({ id: randomUUID(), monitorId: monitor.id, observedAt: seed.observedAt,
           price: seed.price, currency: 'BRL', offer: seed, complete: false, criteriaVersion: 0 });
+        for (const entry of monitors) {
+          entry.creationEmail = await confirmCreation(storage, entry, url.origin).catch(() => ({ status: 'failed' as const, attemptedAt: new Date().toISOString() }));
+          await storage.saveMonitor(entry);
+        }
         return json({ monitor: monitors[0], seeded: Boolean(seed), summary: await summarizeMonitor(storage, monitors[0]), additionalMonitors: monitors.slice(1) }, 201);
       }
       if (path === '/api/explore' && method === 'POST') {
@@ -271,6 +283,14 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
         const observations = await storage.listObservations(monitorId);
         return json({ observations: observations.sort((a, b) => a.observedAt.localeCompare(b.observedAt)).slice(-2_000) });
       }
+      const confirmation = path.match(/^\/api\/monitors\/([A-Za-z0-9_-]{1,100})\/confirmation$/);
+      if (confirmation && method === 'POST') {
+        const monitor = await storage.getMonitor(confirmation[1]);
+        if (!monitor) throw new HttpError(404, 'Alerta não encontrado.');
+        monitor.creationEmail = await confirmCreation(storage, monitor, url.origin);
+        await storage.saveMonitor(monitor);
+        return json({ confirmation: monitor.creationEmail });
+      }
       const match = path.match(/^\/api\/monitors\/([A-Za-z0-9_-]{1,100})(\/run)?$/);
       if (match) {
         const monitor = await storage.getMonitor(match[1]);
@@ -281,6 +301,7 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
           const updated = validated({ ...body, id: monitor.id, createdAt: monitor.createdAt, enabled: body.enabled ?? monitor.enabled, criteriaVersion: monitor.criteriaVersion ?? 0 });
           const criteriaChanged = updated.kind !== monitor.kind || JSON.stringify(validated(monitor).query) !== JSON.stringify(updated.query);
           updated.criteriaVersion = (monitor.criteriaVersion ?? 0) + (criteriaChanged ? 1 : 0);
+          updated.creationEmail = monitor.creationEmail;
           await storage.saveMonitor(updated);
           return json({ monitor: updated, criteriaChanged, summary: await summarizeMonitor(storage, updated) });
         }
