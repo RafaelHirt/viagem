@@ -64,8 +64,8 @@ describe('observed itinerary presentation', () => {
     expect(result.duration).toBe('11 dias de viagem')
     expect(result.returnNotice).toBeNull()
     expect(result.legs[0]).toMatchObject({ duration: '17h 5min', stops: '1 escala', departure: '10/03/2027 às 18:00' })
-    expect(result.legs[1]).toMatchObject({ label: 'Volta', route: 'Amsterdam (AMS) → Goiânia (GYN)', stops: 'Sem escalas' })
-    expect(result.returnRoute).toBe('Amsterdam (AMS) → Goiânia (GYN)')
+    expect(result.legs[1]).toMatchObject({ label: 'Volta', route: 'Amsterdã (AMS) → Goiânia (GYN)', stops: 'Sem escalas' })
+    expect(result.returnRoute).toBe('Amsterdã (AMS) → Goiânia (GYN)')
   })
 
   it('shows a different requested return airport without inventing return segments', () => {

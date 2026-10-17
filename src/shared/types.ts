@@ -7,6 +7,7 @@ export interface GeoArea {
 
 export type TravelMode = 'train' | 'car' | 'flight'
 export interface TripPlan {
+  startAirport?: string
   countryCount: number
   areas: GeoArea[]
   countryCodes: string[]
@@ -43,6 +44,11 @@ export interface FlightQuery {
   departureAirport?: string
   departureDate?: string
   returnDate?: string
+  startMonth?: string
+  endMonth?: string
+  /** JavaScript calendar weekdays: Sunday=0, Monday=1, ..., Saturday=6. */
+  departureWeekdays?: number[]
+  returnWeekdays?: number[]
   minDays: number
   maxDays: number
   horizonMonths: number
@@ -84,6 +90,7 @@ export interface Monitor {
   channels: { email?: string; telegram: boolean }
   enabled: boolean
   createdAt: string
+  criteriaVersion?: number
 }
 
 export interface FlightSegment {
@@ -136,6 +143,7 @@ export interface Observation {
   currency: 'BRL'
   offer: Offer
   complete: boolean
+  criteriaVersion?: number
 }
 
 export interface Coverage {

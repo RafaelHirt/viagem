@@ -1,10 +1,10 @@
 # Prévia de roteiros por vários países
 
-Em **Explorar agora → Passagens aéreas → Vários países**, o usuário escolhe de dois a cinco países, marca de uma a cinco áreas e indica transporte e limite de tempo por trecho. A quantidade de áreas não pode superar a quantidade de países. Uma área pode abranger vários países; a prévia precisa visitar todas as áreas e conter exatamente a quantidade de países diferentes escolhida. Há uma cidade de referência por país, além de eventual retorno à cidade de entrada.
+Em **Explorar agora → Passagens aéreas → Vários países**, o usuário escolhe primeiro a cidade de chegada ao roteiro e depois de dois a cinco países, a área de exploração, o transporte e o limite de tempo por trecho. A primeira cidade fica fixa; a sequência pode se expandir em qualquer direção dentro das áreas. Outras áreas são opcionais e ficam recolhidas. A quantidade de áreas não pode superar a quantidade de países. Uma área pode abranger vários países; a prévia precisa visitar todas as áreas e conter exatamente a quantidade de países diferentes escolhida. Há uma cidade de referência por país, além de eventual retorno à cidade de entrada.
 
 Países sem marcação ficam livres dentro das áreas. Os países marcados são obrigatórios. Para fixar a ordem, todos os países devem ser escolhidos; vale a sequência dos cliques. A opção de ordem livre busca uma sequência menor em distância dentro da amostra, sem afirmar que é a mais barata.
 
-O botão **Experimentar França, Bélgica e Holanda** preenche um exemplo editável usando áreas em torno de aeroportos reais. Não injeta tarifas ou resultados de fornecedores. Os países e aeroportos vêm do catálogo descrito em [DADOS-GEOGRAFICOS.md](DADOS-GEOGRAFICOS.md); o termo país segue a classificação do catálogo, que inclui territórios.
+O botão **Ver exemplo de 3 países** preenche um exemplo editável usando áreas em torno de aeroportos reais. Não injeta tarifas ou resultados de fornecedores. Os países e aeroportos vêm do catálogo descrito em [DADOS-GEOGRAFICOS.md](DADOS-GEOGRAFICOS.md); o termo país segue a classificação do catálogo, que inclui territórios.
 
 ## Como os tempos são estimados
 
@@ -37,3 +37,9 @@ O valor exibido é somente o informado pela fonte aérea. Trens, carros, voos in
 ## Arraste da área
 
 Arraste dentro da bolha para movê-la sem alterar seu raio. Puxe qualquer ponto da borda ou um dos quatro controles para aumentar/diminuir a área; os alvos mantêm tamanho adequado ao toque em telas pequenas. Arrastar fora da seleção move o mapa. A barra de tamanho continua disponível, inclusive por teclado. Mapas de alertas salvos permanecem somente leitura.
+
+## Partida fixa e significado do raio
+
+`tripPlan.startAirport` ancora o roteiro e também o aeroporto de chegada da busca aérea. A seleção de uma nova partida recentra a área principal, preservando seu raio e as áreas extras. Uma oferta chegando por outro aeroporto é descartada. O usuário pode escolher um aeroporto diferente de volta nas preferências; os dois extremos precisam respeitar a área e o roteiro.
+
+O raio limita geograficamente as cidades candidatas. Aumentá-lo não altera o limite de horas e não significa que toda a bolha seja acessível naquele tempo. Cada ligação precisa respeitar o limite estimado. O cálculo continua sem consultar linhas/horários de trem, tarifas internas ou travessias: não é uma isócrona nem uma rota ferroviária validada.

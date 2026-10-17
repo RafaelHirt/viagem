@@ -20,6 +20,7 @@ interface AreaMapProps {
   areaNumber?: number
   tripPreview?: TripPreview
   readOnly?: boolean
+  heading?: string
 }
 
 const WIDTH = 900
@@ -93,7 +94,7 @@ function clampRadius(radius: number) {
   return Math.min(MAX_RADIUS, Math.max(MIN_RADIUS, Math.round(radius / 25) * 25))
 }
 
-export default function AreaMap({ value, onChange, region, focusAirport, otherAreas = [], onSelectArea, areaNumber, tripPreview, readOnly = false }: AreaMapProps) {
+export default function AreaMap({ value, onChange, region, focusAirport, otherAreas = [], onSelectArea, areaNumber, tripPreview, readOnly = false, heading }: AreaMapProps) {
   const [camera, setCamera] = useState<Camera>(() => regionCamera(region, focusAirport, value))
   const [dragging, setDragging] = useState(false)
   const [unitsPerPixel, setUnitsPerPixel] = useState(1)
@@ -268,7 +269,7 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
     <section className="area-map" aria-labelledby={labelId}>
       <div className="area-map-heading">
         <div>
-          <h4 id={labelId}>{readOnly ? 'Destino desta busca' : areaNumber ? `Área ${areaNumber} do roteiro` : 'Marque sua área de viagem'}</h4>
+          <h4 id={labelId}>{heading || (readOnly ? 'Destino desta busca' : areaNumber ? `Área ${areaNumber} do roteiro` : 'Marque sua área de viagem')}</h4>
           <p id={helpId}>{readOnly ? value || otherAreas.length ? 'Áreas salvas para esta viagem.' : region || 'Destino selecionado' : value ? 'Arraste a bolha para mover. Puxe a borda para aumentar ou diminuir.' : 'Toque no mapa para criar sua área.'}</p>
         </div>
         {!readOnly && !areaNumber && <button type="button" className={`area-map-region-button ${!value ? 'is-active' : ''}`} onClick={() => onChange(undefined)}>

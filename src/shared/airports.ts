@@ -14,7 +14,12 @@ export interface Airport {
 }
 
 /** OurAirports scheduled-service snapshot; catalogue entries do not imply live fare coverage. */
-export const AIRPORTS: readonly Airport[] = records
+// Display the city served where a municipality name would confuse travellers.
+const servedCities: Record<string, { city: string; name?: string }> = {
+  MXP: { city: 'Milão', name: 'Milão–Malpensa' }, LIN: { city: 'Milão', name: 'Milão–Linate' }, BGY: { city: 'Bérgamo / Milão' },
+  LIS: { city: 'Lisboa' }, MAD: { city: 'Madri' }, AMS: { city: 'Amsterdã' }, BRU: { city: 'Bruxelas' },
+}
+export const AIRPORTS: readonly Airport[] = records.map(airport => ({ ...airport, ...servedCities[airport.code] }))
 const byCode = new Map(AIRPORTS.map((airport) => [airport.code, airport]))
 
 export const REGIONS = [
@@ -72,6 +77,11 @@ export function searchAirports(text: string, limit = 8): Airport[] {
 export function labelAirport(code: string): string {
   const airport = findAirport(code)
   return airport ? `${airport.city} · ${airport.name} (${airport.code}) — ${airport.country}` : code
+}
+
+export function shortAirportLabel(code: string): string {
+  const airport = findAirport(code)
+  return airport ? `${code.toUpperCase() === 'MXP' ? 'Milão–Malpensa' : airport.city.split(' (')[0]} (${airport.code})` : code
 }
 
 const centralAmerica = new Set(['BZ', 'CR', 'SV', 'GT', 'HN', 'NI', 'PA', 'AI', 'AG', 'AW', 'BS', 'BB',

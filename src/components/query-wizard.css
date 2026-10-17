@@ -76,3 +76,15 @@
   .wizard-actions > div:empty { display: none; }
   .wizard-actions > div:empty + button { width: 100%; }
 }
+.wizard-content > .field { margin: 20px 0; }
+.weekday-fields { margin: 16px 0; display: grid; gap: 15px; }
+.weekday-fields fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.weekday-fields legend { font-size: 12px; color: #4c6e54; margin-bottom: 9px; }
+.weekday-options { display: flex; flex-wrap: wrap; gap: 7px; }
+.weekday-options button { border: 1px solid #dce5d6; border-radius: 8px; padding: 10px 13px; color: #5b7459; background: #fff; font-size: 13px; min-height: 42px; }
+.weekday-options button[aria-pressed=true] { border-color: #8cac6b; background: #ebf3e3; color: #234e39; }
+.flight-airports { border-top: 1px solid #e5ebdf; border-bottom: 1px solid #e5ebdf; margin: 24px 0; padding: 20px 0; }
+.flight-airports h4 { font-size: 14px; color: #305c44; margin-bottom: 17px; }
+.flight-airports .checkbox-label { font-size: 12px; margin-top: 18px; color: #60775b; }
+.same-airport-note { color: #70816a; font-size: 12px; line-height: 1.8; align-self: center; }
+@media(max-width:600px) { .weekday-options { gap: 5px; } .weekday-options button { padding: 9px 11px; } }

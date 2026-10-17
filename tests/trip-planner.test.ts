@@ -61,3 +61,16 @@ describe('multi-country geographic planning', () => {
     expect(() => validateMonitor({ ...monitor, query: { ...monitor.query, area: europeanTrip().areas[0], tripPlan: europeanTrip() } })).toThrow('área simples')
   })
 })
+
+describe('anchored multi-country planning', () => {
+  it('starts at the selected city and rejects a different flight arrival', () => {
+    const plan = { ...europeanTrip(), startAirport: 'CDG' }
+    const preview = previewTrip(plan)
+    expect(preview.status).toBe('ready')
+    expect(preview.stops[0].airportCode).toBe('CDG')
+    expect(preview.countryCount).toBe(3)
+    expect(preview.legs.every(leg => leg.maxMinutes <= plan.maxLegHours * 60)).toBe(true)
+    expect(previewTrip(plan, 'AMS').status).toBe('no-route')
+    expect((validateMonitor({ ...monitor, query: { ...monitor.query, tripPlan: plan } }).query as FlightQuery).arrivalAirport).toBe('CDG')
+  })
+})

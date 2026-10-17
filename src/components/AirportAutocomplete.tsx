@@ -1,17 +1,17 @@
 import { useEffect, useId, useState } from 'react';
-import { findAirport, labelAirport, searchAirports } from '../shared/airports';
+import { findAirport, shortAirportLabel, searchAirports } from '../shared/airports';
 
 export default function AirportAutocomplete({ value, onChange, label, placeholder = 'Ex.: Goiânia ou São Paulo', optional = false }: {
   value: string; onChange: (code: string) => void; label: string; placeholder?: string; optional?: boolean;
 }) {
   const id = useId();
-  const [text, setText] = useState(value ? labelAirport(value) : '');
+  const [text, setText] = useState(value ? shortAirportLabel(value) : '');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
-  useEffect(() => { if (value) setText(labelAirport(value)); }, [value]);
+  useEffect(() => { if (value) setText(shortAirportLabel(value)); }, [value]);
   const options = searchAirports(text, 8);
   function select(code: string) {
-    onChange(code); setText(labelAirport(code)); setOpen(false); setActive(-1);
+    onChange(code); setText(shortAirportLabel(code)); setOpen(false); setActive(-1);
   }
   return <div className="field autocomplete-field">
     <label htmlFor={id}>{label}{optional ? ' (opcional)' : ''}</label>

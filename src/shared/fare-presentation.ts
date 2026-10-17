@@ -1,4 +1,4 @@
-import { findAirport } from './airports.ts'
+import { shortAirportLabel } from './airports.ts'
 import type { Offer } from './types.ts'
 
 export interface PresentedFare {
@@ -101,8 +101,7 @@ function flightTime(value: string | undefined): string | null {
 function airportLabel(code: string | undefined): string | null {
   if (!code?.trim()) return null
   const normalized = code.trim().toUpperCase()
-  const airport = findAirport(normalized)
-  return airport?.city ? `${airport.city.split(' (')[0]} (${normalized})` : normalized
+  return shortAirportLabel(normalized)
 }
 
 function routeLabel(origin: string | undefined, destination: string | undefined): string | null {

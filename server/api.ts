@@ -62,7 +62,7 @@ function minimumHistoryDays(): number {
 }
 
 export async function summarizeMonitor(storage: Storage, monitor: Monitor): Promise<MonitorSummary> {
-  const observations = await storage.listObservations(monitor.id);
+  const observations = (await storage.listObservations(monitor.id)).filter(observation => (observation.criteriaVersion ?? 0) === (monitor.criteriaVersion ?? 0));
   const latest = observations.sort((first, second) => second.observedAt.localeCompare(first.observedAt))[0] ?? null;
   const comparable = latest ? observations.filter((observation) => observation.offer.provider === latest.offer.provider) : observations;
   const baseline = getBaseline(comparable, monitor.rule.windowDays);
@@ -99,7 +99,7 @@ async function runMonitor(storage: Storage, monitor: Monitor, search: typeof exp
   const result = await search(monitor.kind, monitor.query, searchOptions);
   const offer = result.offers.filter((candidate) => candidate.kind === monitor.kind && candidate.currency === 'BRL' && Number.isSafeInteger(candidate.price) && candidate.price > 0)
     .sort((first, second) => first.price - second.price)[0];
-  const observations = await storage.listObservations(monitor.id);
+  const observations = (await storage.listObservations(monitor.id)).filter(observation => (observation.criteriaVersion ?? 0) === (monitor.criteriaVersion ?? 0));
   const baseline = getBaseline(offer ? observations.filter((observation) => observation.offer.provider === offer.provider) : observations, monitor.rule.windowDays);
   const warnings = [...result.warnings];
   let deliveries: Delivery[] = [];
@@ -107,7 +107,7 @@ async function runMonitor(storage: Storage, monitor: Monitor, search: typeof exp
     const complete = result.coverage.complete === true && offer.confirmed === true;
     const observation: Observation = {
       id: randomUUID(), monitorId: monitor.id, observedAt: new Date().toISOString(),
-      price: offer.price, currency: 'BRL', offer, complete,
+      price: offer.price, currency: 'BRL', offer, complete, criteriaVersion: monitor.criteriaVersion ?? 0,
     };
     await storage.saveObservation(observation);
     const drop = complete ? getPriceDrop(offer.price, baseline.mean) : null;
@@ -225,7 +225,7 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
       }
       if (path === '/api/monitors' && method === 'POST') {
         const body = await bodyOf(request);
-        const monitor = validated({ ...body, id: randomUUID(), createdAt: new Date().toISOString(), enabled: body.enabled ?? true });
+        const monitor = validated({ ...body, id: randomUUID(), createdAt: new Date().toISOString(), enabled: body.enabled ?? true, criteriaVersion: 0 });
         const monitors = monitor.kind === 'hotel' && (monitor.query as HotelQuery).pattern === 'both'
           ? (['weekend', 'weekdays'] as const).map((pattern, index) => ({
             ...monitor, id: index === 0 ? monitor.id : randomUUID(),
@@ -256,6 +256,14 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
         const monitor = await storage.getMonitor(match[1]);
         if (!monitor) throw new HttpError(404, 'Monitor não encontrado.');
         if (method === 'POST' && match[2] === '/run') return json(await runMonitor(storage, monitor, search, notify, { budgetMs: 25_000 }));
+        if (!match[2] && method === 'PUT') {
+          const body = await bodyOf(request);
+          const updated = validated({ ...body, id: monitor.id, createdAt: monitor.createdAt, enabled: body.enabled ?? monitor.enabled, criteriaVersion: monitor.criteriaVersion ?? 0 });
+          const criteriaChanged = updated.kind !== monitor.kind || JSON.stringify(validated(monitor).query) !== JSON.stringify(updated.query);
+          updated.criteriaVersion = (monitor.criteriaVersion ?? 0) + (criteriaChanged ? 1 : 0);
+          await storage.saveMonitor(updated);
+          return json({ monitor: updated, criteriaChanged, summary: await summarizeMonitor(storage, updated) });
+        }
         if (!match[2] && method === 'PATCH') {
           const body = await bodyOf(request);
           if (typeof body.enabled !== 'boolean' || Object.keys(body).some((key) => key !== 'enabled')) {

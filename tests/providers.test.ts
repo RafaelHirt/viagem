@@ -300,3 +300,41 @@ describe('real price provider adapter', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+describe('date and airport restrictions reach the flight source', () => {
+  beforeEach(() => { vi.stubEnv('SERPAPI_API_KEY', 'private-test-key'); vi.stubGlobal('fetch', vi.fn()); vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-17T18:00:00Z')); });
+  afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+  const weekend: FlightQuery = { origin: 'GYN', destination: 'Europa', minDays: 2, maxDays: 2, adults: 2, allowOpenJaw: true, horizonMonths: 12, startMonth: '2027-02', endMonth: '2027-10', departureWeekdays: [5], returnWeekdays: [0] };
+  it('filters discovery dates strictly and sends the selected month range and weekdays', async () => {
+    const good = { price: 1200, name: 'Paris', departure_airport_code: 'GYN', arrival_airport_code: 'CDG', start_date: '2027-02-05', end_date: '2027-02-07' };
+    vi.mocked(fetch).mockResolvedValue(response({ deals: [good, { ...good, start_date: '2027-02-08', end_date: '2027-02-10' }, { ...good, start_date: '2027-11-05', end_date: '2027-11-07' }] }));
+    const found = await explore('flight', weekend);
+    expect(found.offers).toHaveLength(1); expect(found.offers[0]).toMatchObject({ outboundDate: '2027-02-05', returnDate: '2027-02-07', passengers: 2 });
+    const params = new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams;
+    expect(params.get('outbound_date')).toBe('2027-02-01,2027-10-31');
+    expect(params.get('query')).toContain('Friday'); expect(params.get('query')).toContain('Sunday');
+  });
+  it('samples only Friday to Sunday pairs with both selected airports, including an exit-only choice', async () => {
+    vi.mocked(fetch).mockImplementation(async input => {
+      const params = new URL(String(input)).searchParams; const legs = JSON.parse(params.get('multi_city_json')!);
+      return response({ best_flights: [{ price: 1200, flights: [{ departure_airport: { id: 'GYN', time: `${legs[0].date} 09:00` }, arrival_airport: { id: legs[0].arrival_id } }] }] });
+    });
+    const results = await explore('flight', { ...weekend, arrivalAirport: 'CDG', departureAirport: 'AMS' });
+    expect(results.offers).toHaveLength(3);
+    for (const [input] of vi.mocked(fetch).mock.calls) {
+      const legs = JSON.parse(new URL(String(input)).searchParams.get('multi_city_json')!);
+      expect(legs[0].arrival_id).toBe('CDG'); expect(legs[1].departure_id).toBe('AMS');
+      expect(new Date(legs[0].date).getUTCDay()).toBe(5); expect(new Date(legs[1].date).getUTCDay()).toBe(0);
+      expect(legs[0].date >= '2027-02-01' && legs[1].date <= '2027-10-31').toBe(true);
+    }
+    vi.mocked(fetch).mockClear();
+    const exitOnly = await explore('flight', { ...weekend, departureAirport: 'FCO' });
+    expect(exitOnly.offers).toHaveLength(3);
+    expect(exitOnly.offers.every(offer => offer.departureAirport === 'FCO')).toBe(true);
+  });
+  it('rejects impossible weekday/duration combinations and expired periods before a paid request', async () => {
+    await expect(explore('flight', { ...weekend, minDays: 1, maxDays: 1 })).rejects.toMatchObject({ code: 'NO_MATCHING_DATES' });
+    await expect(explore('flight', { ...weekend, startMonth: '2026-02', endMonth: '2026-05' })).rejects.toMatchObject({ code: 'TRAVEL_PERIOD_EXPIRED' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});

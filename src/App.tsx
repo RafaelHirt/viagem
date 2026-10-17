@@ -4,6 +4,8 @@ import { findAirport } from "./shared/airports";
 import SetupGuide from "./components/SetupGuide";
 import { presentFare, presentFlightFacts } from "./shared/fare-presentation";
 import { runSearchJob } from "./shared/search-client";
+import { flightDraftFromQuery, flightQueryFromDraft } from "./shared/flight-draft";
+import { flightPeriodLabel, weekdayLabel } from "./shared/flight-dates";
 import TripSummary from "./components/TripSummary";
 import {
   ArrowDownRight,
@@ -24,6 +26,7 @@ import {
   MapPin,
   Menu,
   Plane,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -160,7 +163,7 @@ function queryDescription(summary: MonitorSummary) {
   const q = summary.monitor.query;
   if (summary.monitor.kind === "flight") {
     const flight = q as FlightQuery;
-    return `${findAirport(flight.origin)?.city.split(" (")[0] || flight.origin} → ${flight.destination} · ${flight.minDays} a ${flight.maxDays} dias`;
+    return `${findAirport(flight.origin)?.city.split(" (")[0] || flight.origin} → ${flight.tripPlan?.startAirport ? `${findAirport(flight.tripPlan.startAirport)?.city || flight.tripPlan.startAirport} · ${flight.tripPlan.countryCount} países` : flight.destination} · ${flight.minDays} a ${flight.maxDays} dias · ${flightPeriodLabel(flight)}${flight.departureWeekdays?.length || flight.returnWeekdays?.length ? ` · ida ${weekdayLabel(flight.departureWeekdays)}, volta ${weekdayLabel(flight.returnWeekdays)}` : ''}`;
   }
   const hotel = q as HotelQuery;
   return `${hotel.property} · ${hotel.pattern === "weekend" ? "sexta a domingo" : hotel.pattern === "weekdays" ? "domingo a sexta" : "semana e fins de semana"}`;
@@ -177,7 +180,7 @@ function FlightFacts({ offer }: { offer: Offer }) {
 }
 function FareAmount({ offer, adults }: { offer: Offer; adults?: number }) {
   const fare = presentFare(offer, adults);
-  return <div className="fare-amount"><span className="price-label">{fare.caption}</span><strong>{money(fare.priceCents)}</strong><small>{fare.context}</small></div>;
+  return <div className="fare-amount"><span className="price-label">{fare.caption}</span><strong>{money(fare.priceCents)}</strong><small>{fare.context}</small>{offer.tripPreview && <small>Somente passagem aérea; deslocamentos entre países à parte.</small>}</div>;
 }
 function OfferCard({ offer, adults }: { offer: Offer; adults?: number }) {
   const safeUrl = offer.url && /^https:\/\//i.test(offer.url) ? offer.url : undefined;
@@ -207,6 +210,7 @@ export default function App() {
   const [flight, setFlight] = useState<FlightDraft>(initialFlight);
   const [hotel, setHotel] = useState<HotelDraft>(initialHotel);
   const [createMonitor, setCreateMonitor] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [monitorName, setMonitorName] = useState("");
   const [dropPercent, setDropPercent] = useState("20");
   const [windowDays, setWindowDays] = useState("60");
@@ -263,57 +267,26 @@ export default function App() {
     if (next !== "monitors") setCreateMonitor(false);
   };
   function openCreate(nextKind?: Kind) {
+    setEditingId(null);
+    setMonitorName("");
     if (nextKind) setKind(nextKind);
     setTab("monitors");
     setCreateMonitor(true);
     setMobileMenu(false);
     setError("");
   }
+  function openEdit(item: MonitorSummary) {
+    const monitor = item.monitor;
+    setEditingId(monitor.id); setKind(monitor.kind); setMonitorName(monitor.name);
+    setDropPercent(String(monitor.rule.dropPercent)); setWindowDays(String(monitor.rule.windowDays));
+    setEmail(monitor.channels.email || ""); setTelegram(monitor.channels.telegram);
+    if (monitor.kind === "flight") setFlight(flightDraftFromQuery(monitor.query as FlightQuery));
+    else { const q = monitor.query as HotelQuery; setHotel({ ...initialHotel, property: q.property, propertyId: q.propertyId || "", adults: String(q.adults), pattern: q.pattern, horizonMonths: String(q.horizonMonths || 12), checkIn: q.checkIn || "", checkOut: q.checkOut || "" }); }
+    setTab("monitors"); setCreateMonitor(true); setError(""); setMobileMenu(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
   function makeQuery(): FlightQuery | HotelQuery {
-    if (kind === "flight") {
-      if (!findAirport(flight.origin.trim()))
-        throw new Error(
-          "Selecione seu aeroporto de origem na lista de cidades.",
-        );
-      if (!flight.destination.trim())
-        throw new Error("Informe um destino ou região.");
-      if (Number(flight.maxDays) < Number(flight.minDays))
-        throw new Error(
-          "A duração máxima deve ser igual ou maior que a mínima.",
-        );
-      if (Boolean(flight.departureDate) !== Boolean(flight.returnDate))
-        throw new Error(
-          "Informe as duas datas ou deixe ambas em branco para uma busca flexível.",
-        );
-      if (flight.departureDate && flight.returnDate <= flight.departureDate)
-        throw new Error("A volta precisa ser depois da ida.");
-      return {
-        origin: flight.origin.trim(),
-        destination: flight.destination.trim(),
-        ...(flight.area ? { area: flight.area } : {}),
-        ...(flight.destinationMode === 'trip' && flight.tripPlan ? { tripPlan: flight.tripPlan } : {}),
-        minDays: Number(flight.minDays),
-        maxDays: Number(flight.maxDays),
-        horizonMonths: Number(flight.horizonMonths),
-        adults: Number(flight.adults),
-        allowOpenJaw: flight.allowOpenJaw,
-        ...(flight.allowOpenJaw && flight.maxAirportDistanceKm.trim()
-          ? { maxAirportDistanceKm: Number(flight.maxAirportDistanceKm) }
-          : {}),
-        ...(flight.arrivalAirport
-          ? { arrivalAirport: flight.arrivalAirport.trim() }
-          : {}),
-        ...(flight.departureAirport
-          ? { departureAirport: flight.departureAirport.trim() }
-          : {}),
-        ...(flight.departureDate
-          ? {
-              departureDate: flight.departureDate,
-              returnDate: flight.returnDate,
-            }
-          : {}),
-      };
-    }
+    if (kind === "flight") return flightQueryFromDraft(flight);
     if (!hotel.property.trim() || !hotel.propertyId)
       throw new Error("Selecione um hotel encontrado na Booking antes de continuar.");
     if (Boolean(hotel.checkIn) !== Boolean(hotel.checkOut))
@@ -356,8 +329,9 @@ export default function App() {
     setError("");
     try {
       const query = makeQuery();
-      const saved = await api<{ monitor: { id: string }; additionalMonitors?: unknown[] }>("/monitors", {
-        method: "POST",
+      const wasEditing = Boolean(editingId);
+      const saved = await api<{ monitor: { id: string }; criteriaChanged?: boolean; additionalMonitors?: unknown[] }>(editingId ? `/monitors/${editingId}` : "/monitors", {
+        method: editingId ? "PUT" : "POST",
         body: JSON.stringify({
           kind,
           name:
@@ -379,10 +353,13 @@ export default function App() {
       const data = await api<{ monitors: MonitorSummary[] }>("/monitors");
       setMonitors(data.monitors);
       setCreateMonitor(false);
+      setEditingId(null);
       setMonitorName("");
       setSubmitting(false);
-      setToast("Alerta salvo. Consultando os primeiros preços…");
-      await monitorAction(saved.monitor.id, "run");
+      if (!wasEditing || saved.criteriaChanged) {
+        setToast(wasEditing ? "Alerta atualizado. Consultando preços para os novos critérios…" : "Alerta salvo. Consultando os primeiros preços…");
+        await monitorAction(saved.monitor.id, "run");
+      } else setToast("Alterações salvas.");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -894,7 +871,7 @@ export default function App() {
                   </div>
                   <div className="explore-layout">
                     <section className="panel search-panel">
-                      {results ? <div className="search-recap"><div><strong>{kind === 'flight' ? `${findAirport(flight.origin)?.city || flight.origin} → ${flight.destination}` : hotel.property}</strong><p>{kind === 'flight' ? `${flight.minDays} a ${flight.maxDays} dias · próximos ${flight.horizonMonths} meses` : `Próximos ${hotel.horizonMonths} meses`}</p></div><button className="button button-secondary" onClick={() => { setResults(null); setExploreError(""); }}>Alterar busca</button></div> : <QueryWizard hotelAvailable={status.providers.hotels.configured} mode="explore" {...queryProps} submitting={submitting} onSubmit={explore} onKindChange={(value) => { setKind(value); setResults(null); setExploreError(""); }} />}
+                      {results ? <div className="search-recap"><div><strong>{kind === 'flight' ? `${findAirport(flight.origin)?.city || flight.origin} → ${flight.destination}` : hotel.property}</strong><p>{kind === 'flight' ? `${flightQueryFromDraft(flight).minDays} a ${flightQueryFromDraft(flight).maxDays} dias · ${flightPeriodLabel(flightQueryFromDraft(flight))}` : `Próximos ${hotel.horizonMonths} meses`}</p></div><button className="button button-secondary" onClick={() => { setResults(null); setExploreError(""); }}>Alterar busca</button></div> : <QueryWizard hotelAvailable={status.providers.hotels.configured} mode="explore" {...queryProps} submitting={submitting} onSubmit={explore} onKindChange={(value) => { setKind(value); setResults(null); setExploreError(""); }} />}
                     </section>
 
                   </div>
@@ -965,7 +942,7 @@ export default function App() {
                       </span>
                       <h1>
                         {createMonitor
-                          ? "Criar alerta"
+                          ? editingId ? "Editar alerta" : "Criar alerta"
                           : "Alertas salvos"}
                         <span className="heading-dot">.</span>
                       </h1>
@@ -1004,7 +981,7 @@ export default function App() {
                   )}
                   {createMonitor ? (
                     <section className="panel monitor-form">
-                      <QueryWizard hotelAvailable={status.providers.hotels.configured} mode="monitor" {...queryProps} onKindChange={setKind} submitting={submitting} onSubmit={saveMonitor} onCancel={() => { setCreateMonitor(false); setError(""); }} alertSummary={`${dropPercent}% abaixo da média dos últimos ${windowDays} dias · ${[email ? "e-mail" : "", telegram ? "Telegram" : ""].filter(Boolean).join(" e ") || "acompanhamento no painel"}`} alertFields={<>
+                      <QueryWizard key={editingId || "create"} editing={Boolean(editingId)} hotelAvailable={status.providers.hotels.configured} mode="monitor" {...queryProps} onKindChange={setKind} submitting={submitting} onSubmit={saveMonitor} onCancel={() => { setCreateMonitor(false); setEditingId(null); setError(""); }} alertSummary={`${dropPercent}% abaixo da média dos últimos ${windowDays} dias · ${[email ? "e-mail" : "", telegram ? "Telegram" : ""].filter(Boolean).join(" e ") || "acompanhamento no painel"}`} alertFields={<>
                       <div className="field-grid monitor-name">
                         <Field
                           label="Nome do alerta (opcional)"
@@ -1239,6 +1216,7 @@ Escolha uma viagem no mapa para começar.
                                   )}
                                   Consultar preços
                                 </button>
+                                <button className="text-button" onClick={() => openEdit(item)}><Pencil size={14} />Editar</button>
                                 <button
                                   className="text-button"
                                   onClick={() =>
@@ -1533,9 +1511,11 @@ Escolha uma viagem no mapa para começar.
               </div>
             ) : (
               <div className="history-list">
-                {observations.map((observation, index) => (
+                {!observations.some(observation => (observation.criteriaVersion ?? 0) === (monitors.find(item => item.monitor.id === historyId)?.monitor.criteriaVersion ?? 0)) && <p className="history-empty">Ainda não há consultas para os critérios atuais.</p>}
+                {observations.filter(observation => (observation.criteriaVersion ?? 0) === (monitors.find(item => item.monitor.id === historyId)?.monitor.criteriaVersion ?? 0)).map((observation, index) => (
                   <HistoryItem key={index} observation={observation} adults={(monitors.find(item => item.monitor.id === historyId)?.monitor.query as FlightQuery | undefined)?.adults} />
                 ))}
+                {observations.some(observation => (observation.criteriaVersion ?? 0) !== (monitors.find(item => item.monitor.id === historyId)?.monitor.criteriaVersion ?? 0)) && <details className="search-explanation"><summary>Consultas anteriores à edição</summary><p>Estas consultas ficam fora da referência atual.</p>{observations.filter(observation => (observation.criteriaVersion ?? 0) !== (monitors.find(item => item.monitor.id === historyId)?.monitor.criteriaVersion ?? 0)).map(observation => <HistoryItem key={observation.id} observation={observation} />)}</details>}
               </div>
             )}
             <div className="inline-note">

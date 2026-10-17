@@ -189,3 +189,27 @@ describe('notification acceptance and stable deduplication', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('editing saved alerts with separate price histories', () => {
+  it('preserves identity and observations, retains history for a rename, and starts a new comparison after criteria change', async () => {
+    const { storage } = await storageFixture();
+    const handler = createApiHandler({ storage, password: 'senha-segura-do-painel', search: async () => ({ offers: [offer({ price: 50000, passengers: 2 })], coverage: { complete: true, description: 'Controlled test', queries: 1 }, warnings: [] }) }); const cookie = await login(handler);
+    const created = await (await handler(request('/api/monitors', 'POST', input, cookie))).json();
+    const monitor = created.monitor as Monitor;
+    const observedAt = new Date(Date.now() - 86_400_000).toISOString();
+    await storage.saveObservation({ id: 'legacy-observation', monitorId: monitor.id, observedAt, price: 100000, currency: 'BRL', offer: offer({ observedAt, price: 100000 }), complete: true });
+    const renamed = await (await handler(request(`/api/monitors/${monitor.id}`, 'PUT', { ...monitor, name: 'Novo nome', criteriaVersion: 999 }, cookie))).json();
+    expect(renamed).toMatchObject({ criteriaChanged: false, monitor: { id: monitor.id, name: 'Novo nome', createdAt: monitor.createdAt, criteriaVersion: 0 }, summary: { latest: { price: 100000 }, baseline: { validDays: 1 } } });
+    const changed = await (await handler(request(`/api/monitors/${monitor.id}`, 'PUT', { ...monitor, query: { ...monitor.query, adults: 2, startMonth: '2027-02', endMonth: '2027-10' } }, cookie))).json();
+    expect(changed).toMatchObject({ criteriaChanged: true, monitor: { id: monitor.id, criteriaVersion: 1 }, summary: { latest: null, baseline: { validDays: 0, mean: null } } });
+    expect(await storage.listObservations(monitor.id)).toHaveLength(1);
+    const updatedRun = await (await handler(request(`/api/monitors/${monitor.id}/run`, 'POST', undefined, cookie))).json();
+    expect(updatedRun.summary).toMatchObject({ baseline: { mean: null, validDays: 0 }, latest: { price: 50000, passengers: 2 } });
+    expect((await storage.listObservations(monitor.id)).find(observation => observation.criteriaVersion === 1)).toMatchObject({ price: 50000 });
+
+    expect((await handler(request(`/api/monitors/${monitor.id}`, 'PUT', { ...monitor, query: { ...monitor.query, adults: 0 } }, cookie))).status).toBe(400);
+    expect((await storage.getMonitor(monitor.id))?.criteriaVersion).toBe(1);
+    expect((await handler(request(`/api/monitors/${monitor.id}`, 'PUT', monitor))).status).toBe(401);
+    expect((await handler(request(`/api/monitors/${monitor.id}`, 'PUT', monitor, cookie, 'https://elsewhere.example'))).status).toBe(403);
+  });
+})

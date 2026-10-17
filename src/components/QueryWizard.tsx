@@ -1,7 +1,11 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, Bell, Check, Hotel, Info, LoaderCircle, Plane, Search, SlidersHorizontal } from 'lucide-react';
-import type { GeoArea, TripPlan } from '../shared/types';
-import { findAirport, labelAirport, REGIONS } from '../shared/airports';
+import { flightQueryFromDraft, type FlightDraft } from '../shared/flight-draft';
+export { initialFlight, type FlightDraft } from '../shared/flight-draft';
+import { validateMonitor } from '../shared/domain';
+import { flightPeriodLabel, weekdayLabel, flightWindow, sampleTravelDates } from '../shared/flight-dates';
+import FlightPreferences from './FlightPreferences';
+import { findAirport, labelAirport, shortAirportLabel, REGIONS } from '../shared/airports';
 import { DEFAULT_TRIP, previewTrip } from '../shared/trip-planner';
 import TripSummary from './TripSummary';
 import AirportAutocomplete from './AirportAutocomplete';
@@ -9,20 +13,14 @@ import HotelAutocomplete from './HotelAutocomplete';
 import './query-wizard.css';
 const AreaMap = lazy(() => import('./AreaMap'));
 const TripPlanner = lazy(() => import('./TripPlanner'));
-export type FlightDraft = {
-  origin: string; destination: string; destinationMode: 'region' | 'airport' | 'map' | 'trip'; arrivalAirport: string; departureAirport: string;
-  departureDate: string; returnDate: string; minDays: string; maxDays: string; horizonMonths: string; maxAirportDistanceKm: string;
-  adults: string; allowOpenJaw: boolean; area?: GeoArea; tripPlan?: TripPlan;
-};
 export type HotelDraft = { property: string; propertyId: string; checkIn: string; checkOut: string; pattern: 'weekend' | 'weekdays' | 'both'; adults: string; horizonMonths: string };
-export const initialFlight: FlightDraft = { origin: '', destination: 'Europa', destinationMode: 'map', arrivalAirport: '', departureAirport: '', departureDate: '', returnDate: '', minDays: '10', maxDays: '20', horizonMonths: '12', maxAirportDistanceKm: '', adults: '1', allowOpenJaw: true };
 export const initialHotel: HotelDraft = { property: '', propertyId: '', checkIn: '', checkOut: '', pattern: 'weekend', adults: '2', horizonMonths: '12' };
 function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) { return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>; }
 function Horizon({ value, onChange }: { value: string; onChange: (value: string) => void }) { return <Field label="Pesquisar viagens nos próximos"><select value={value} onChange={e => onChange(e.target.value)}>{[1, 3, 6, 9, 12].map(months => <option key={months} value={months}>{months} {months === 1 ? 'mês' : 'meses'}</option>)}</select></Field>; }
-export default function QueryWizard({ mode, kind, onKindChange, flight, setFlight, hotel, setHotel, submitting, onSubmit, onCancel, alertFields, alertSummary, hotelAvailable = false }: {
+export default function QueryWizard({ mode, kind, onKindChange, flight, setFlight, hotel, setHotel, submitting, onSubmit, onCancel, alertFields, alertSummary, hotelAvailable = false, editing = false }: {
   mode: 'explore' | 'monitor'; kind: 'flight' | 'hotel'; onKindChange: (kind: 'flight' | 'hotel') => void;
   flight: FlightDraft; setFlight: (draft: FlightDraft) => void; hotel: HotelDraft; setHotel: (draft: HotelDraft) => void;
-  submitting: boolean; onSubmit: (event: FormEvent) => void; onCancel?: () => void; alertFields?: ReactNode; alertSummary?: string; hotelAvailable?: boolean;
+  submitting: boolean; onSubmit: (event: FormEvent) => void; onCancel?: () => void; alertFields?: ReactNode; alertSummary?: string; hotelAvailable?: boolean; editing?: boolean;
 }) {
   const [step, setStep] = useState(0);
   const [error, setError] = useState('');
@@ -33,7 +31,7 @@ export default function QueryWizard({ mode, kind, onKindChange, flight, setFligh
   const steps = mode === 'monitor' ? ['Destino', 'Preferências', 'Alertas', 'Revisão'] : ['Destino', 'Preferências', 'Revisão'];
   const last = steps.length - 1;
   const hotelUnavailable = kind === 'hotel' && !hotelAvailable;
-  const f = (key: keyof FlightDraft, value: string | boolean | GeoArea | undefined) => setFlight({ ...flight, [key]: value });
+  const f = <K extends keyof FlightDraft>(key: K, value: FlightDraft[K]) => setFlight({ ...flight, [key]: value });
   const h = (key: keyof HotelDraft, value: string) => setHotel({ ...hotel, [key]: value });
   useEffect(() => { if (didMount.current) title.current?.focus(); else didMount.current = true; }, [step]);
   function goNext() {
@@ -43,12 +41,11 @@ export default function QueryWizard({ mode, kind, onKindChange, flight, setFligh
         if (!findAirport(flight.origin)) message = 'Selecione seu aeroporto de partida na lista de cidades.';
         else if (flight.destinationMode === 'airport' && !findAirport(flight.arrivalAirport)) message = 'Selecione a cidade ou o aeroporto de chegada na lista.';
         else if (flight.destinationMode === 'map' && !flight.area && !REGIONS.some(region => region.label === flight.destination)) message = 'Marque uma área no mapa para escolher os aeroportos permitidos.';
-        else if (flight.destinationMode === 'trip' && (!flight.tripPlan || previewTrip(flight.tripPlan).status !== 'ready')) message = flight.tripPlan ? previewTrip(flight.tripPlan).message : 'Marque as áreas para montar o roteiro.';
+        else if (flight.destinationMode === 'trip' && (!flight.tripPlan?.startAirport || previewTrip(flight.tripPlan).status !== 'ready')) message = !flight.tripPlan?.startAirport ? 'Escolha a primeira cidade do roteiro.' : previewTrip(flight.tripPlan).message;
       } else if (!hotel.propertyId) message = 'Selecione um hotel encontrado na Booking. O nome digitado sozinho ainda não confirma a propriedade.';
     }
     if (step === 1) {
-      if (kind === 'flight' && Number(flight.minDays) > Number(flight.maxDays)) message = 'A duração máxima deve ser igual ou maior que a mínima.';
-      if (kind === 'flight' && (Boolean(flight.departureDate) !== Boolean(flight.returnDate) || (flight.departureDate && flight.returnDate <= flight.departureDate))) message = 'Preencha ida e volta, com a volta depois da ida, ou deixe as duas datas livres.';
+      if (kind === 'flight') try { validateMonitor({ id: 'review', name: 'Pesquisa', kind, query: flightQueryFromDraft(flight), rule: { dropPercent: 20, windowDays: 60 }, channels: { telegram: false }, enabled: true, createdAt: new Date().toISOString() }); if (flight.dateMode === 'exact' && (!flight.departureDate || !flight.returnDate)) message = 'Informe as datas de ida e volta.'; if (flight.dateMode === 'months' && (!flight.startMonth || !flight.endMonth)) message = 'Informe o mês inicial e o mês final.'; if (!message && flight.dateMode !== 'exact') { const query = flightQueryFromDraft(flight); const window = flightWindow(query); if (!sampleTravelDates(query, window.start, window.end).length) message = 'Não há combinação com estes dias, duração e período. Ajuste suas preferências.'; } if (flight.tripPlan && flight.destinationMode === 'trip') { const preview = previewTrip(flight.tripPlan, flight.arrivalAirport, flight.departureAirport || (!flight.allowOpenJaw ? flight.arrivalAirport : undefined)); if (preview.status !== 'ready') message = preview.message; } } catch (error) { message = (error as Error).message; }
       if (kind === 'hotel' && (Boolean(hotel.checkIn) !== Boolean(hotel.checkOut) || (hotel.checkIn && hotel.checkOut <= hotel.checkIn))) message = 'Preencha entrada e saída, com a saída depois da entrada, ou deixe as duas datas livres.';
     }
     if (message) { setError(message); return; }
@@ -80,18 +77,10 @@ export default function QueryWizard({ mode, kind, onKindChange, flight, setFligh
         {(flight.destinationMode === 'map' || flight.destinationMode === 'region') && <div className="destination-region"><Field label="Região do mapa"><select value={mapRegion} onChange={event => { const region = event.target.value; setMapRegion(region); setFlight({ ...flight, destinationMode: 'map', destination: region, area: undefined, arrivalAirport: '', departureAirport: '' }); }}>{REGIONS.map(region => <option key={region.id} value={region.label}>{region.label}</option>)}</select></Field></div>}
         {flight.destinationMode === 'airport' && <AirportAutocomplete label="Para qual cidade ou aeroporto?" value={flight.arrivalAirport} onChange={value => setFlight({ ...flight, arrivalAirport: value, departureAirport: '', destination: value ? labelAirport(value) : '' })} placeholder="Ex.: Paris, Lisboa ou Roma" />}
         {flight.destinationMode === 'map' && <div className="wizard-map"><Suspense fallback={<div className="map-loading"><LoaderCircle className="spin" size={20} />Carregando mapa…</div>}><AreaMap value={flight.area} onChange={area => setFlight({ ...flight, area, destination: area ? area.label || 'Área no mapa' : mapRegion, arrivalAirport: '', departureAirport: '' })} region={mapRegion} /></Suspense></div>}
-        {flight.destinationMode === 'trip' && <Suspense fallback={<div className="map-loading"><LoaderCircle className="spin" size={20} />Carregando planejador…</div>}><TripPlanner value={flight.tripPlan ?? DEFAULT_TRIP} region={mapRegion} onChange={tripPlan => setFlight({ ...flight, tripPlan, area: undefined, destination: `Roteiro por ${tripPlan.countryCount} países` })} /></Suspense>}
+        {flight.destinationMode === 'trip' && <Suspense fallback={<div className="map-loading"><LoaderCircle className="spin" size={20} />Carregando planejador…</div>}><TripPlanner value={flight.tripPlan ?? DEFAULT_TRIP} region={mapRegion} onChange={tripPlan => setFlight({ ...flight, tripPlan, arrivalAirport: tripPlan.startAirport || '', area: undefined, destination: `Roteiro por ${tripPlan.countryCount} países` })} /></Suspense>}
       </> : <HotelAutocomplete value={hotel.property} selectedId={hotel.propertyId} onChange={(property, propertyId) => setHotel({ ...hotel, property, propertyId })} />)}
-      {step === 1 && (kind === 'flight' ? <>
-        <div className="field-grid three"><Field label="Ficar pelo menos"><div className="input-suffix"><input type="number" required min={1} max={90} value={flight.minDays} onChange={e => f('minDays', e.target.value)} /><span>dias</span></div></Field><Field label="Ficar no máximo"><div className="input-suffix"><input type="number" required min={1} max={90} value={flight.maxDays} onChange={e => f('maxDays', e.target.value)} /><span>dias</span></div></Field><Horizon value={flight.horizonMonths} onChange={value => f('horizonMonths', value)} /></div>
-        <div className="flexibility-box"><label className="checkbox-label"><input type="checkbox" checked={flight.allowOpenJaw} onChange={e => setFlight({ ...flight, allowOpenJaw: e.target.checked, departureAirport: e.target.checked ? flight.departureAirport : '' })} /><span><strong>Posso chegar por uma cidade e voltar por outra</strong><small>{flight.destinationMode === 'trip' ? 'Dentro das áreas do roteiro.' : flight.area ? 'Dentro da área marcada no mapa.' : 'Dentro do destino escolhido.'}</small></span></label></div>
-        <Field label="Quantos adultos vão viajar?"><input type="number" required min={1} max={9} value={flight.adults} onChange={e => f('adults', e.target.value)} /></Field>
-        <details className="advanced-fields"><summary><SlidersHorizontal size={16} />Definir datas ou aeroportos</summary><div className="field-grid">
-          <Field label="Ida em uma data específica"><input type="date" value={flight.departureDate} onChange={e => f('departureDate', e.target.value)} /></Field><Field label="Volta em uma data específica"><input type="date" min={flight.departureDate || undefined} value={flight.returnDate} onChange={e => f('returnDate', e.target.value)} /></Field>
-          {flight.destinationMode !== 'map' && <><AirportAutocomplete optional label="Fixar aeroporto de chegada" value={flight.arrivalAirport} onChange={value => f('arrivalAirport', value)} placeholder="Ex.: Paris" />{flight.allowOpenJaw && <AirportAutocomplete optional label="Fixar aeroporto de retorno" value={flight.departureAirport} onChange={value => f('departureAirport', value)} placeholder="Ex.: Madri" />}</>}
-          {flight.allowOpenJaw && <Field label="Limite de distância entre aeroportos (opcional)" hint="Distância em linha reta."><div className="input-suffix"><input type="number" min={1} max={20050} placeholder="Sem limite adicional" value={flight.maxAirportDistanceKm} onChange={e => f('maxAirportDistanceKm', e.target.value)} /><span>km</span></div></Field>}
-        </div></details>
-      </> : <>
+      {step === 1 && (kind === 'flight' ? <FlightPreferences value={flight} onChange={setFlight} /> : <>
+
         <div className="field-grid"><Field label="Quando você prefere se hospedar?"><select value={hotel.pattern} onChange={e => h('pattern', e.target.value)}><option value="weekend">Fins de semana · sexta a domingo</option><option value="weekdays">Durante a semana · domingo a sexta</option><option value="both">Ambos os períodos</option></select></Field><Horizon value={hotel.horizonMonths} onChange={value => h('horizonMonths', value)} /><Field label="Quantos adultos?"><input type="number" required min={1} max={10} value={hotel.adults} onChange={e => h('adults', e.target.value)} /></Field></div>
         <div className="inline-note"><Info size={17} /><span>Buscamos estadias futuras. Fins de semana e dias de semana usam referências separadas para comparar períodos equivalentes.</span></div>
         <details className="advanced-fields"><summary><SlidersHorizontal size={16} />Fixar datas, se preferir</summary><div className="field-grid"><Field label="Entrada"><input type="date" value={hotel.checkIn} onChange={e => h('checkIn', e.target.value)} /></Field><Field label="Saída"><input type="date" min={hotel.checkIn || undefined} value={hotel.checkOut} onChange={e => h('checkOut', e.target.value)} /></Field></div></details>
@@ -99,15 +88,15 @@ export default function QueryWizard({ mode, kind, onKindChange, flight, setFligh
       {mode === 'monitor' && step === 2 && alertFields}
       {step === last && <>
         <dl className="query-review">
-          {kind === 'flight' ? <><div><dt>Partida</dt><dd>{findAirport(flight.origin)?.city || flight.origin} ({flight.origin})</dd></div><div><dt>Destino</dt><dd>{destination}</dd></div><div><dt>Duração e período</dt><dd>{flight.minDays} a {flight.maxDays} dias · próximos {flight.horizonMonths} meses</dd></div><div><dt>Flexibilidade</dt><dd>{flight.allowOpenJaw ? 'Pode chegar e voltar por cidades diferentes' : 'Chegada e retorno pela mesma cidade'}{flight.area ? ' dentro da área marcada' : ''}{flight.maxAirportDistanceKm ? ` · até ${flight.maxAirportDistanceKm} km entre aeroportos` : ''}</dd></div>{flight.departureDate && <div><dt>Datas definidas</dt><dd>{flight.departureDate.split('-').reverse().join('/')} a {flight.returnDate.split('-').reverse().join('/')}</dd></div>}</> : <><div><dt>Hotel selecionado</dt><dd>{hotel.property}</dd></div><div><dt>Estadias</dt><dd>{hotel.pattern === 'weekend' ? 'Sexta a domingo' : hotel.pattern === 'weekdays' ? 'Domingo a sexta' : 'Semana e fins de semana'} · próximos {hotel.horizonMonths} meses</dd></div>{hotel.checkIn && <div><dt>Datas definidas</dt><dd>{hotel.checkIn.split('-').reverse().join('/')} a {hotel.checkOut.split('-').reverse().join('/')}</dd></div>}</>}
+          {kind === 'flight' ? <><div><dt>Partida</dt><dd>{findAirport(flight.origin)?.city || flight.origin} ({flight.origin})</dd></div><div><dt>Destino</dt><dd>{destination}</dd></div><div><dt>Duração e período</dt><dd>{flightQueryFromDraft(flight).minDays} a {flightQueryFromDraft(flight).maxDays} dias · {flightPeriodLabel(flightQueryFromDraft(flight))}</dd></div>{flight.weekdayMode !== 'any' && flight.dateMode !== 'exact' && <div><dt>Dias da semana</dt><dd>Ida: {weekdayLabel(flight.departureWeekdays)} · volta: {weekdayLabel(flight.returnWeekdays)}</dd></div>}{flight.arrivalAirport && <div><dt>Chegada</dt><dd>{shortAirportLabel(flight.arrivalAirport)}</dd></div>}{flight.departureAirport && flight.allowOpenJaw && <div><dt>Volta por</dt><dd>{shortAirportLabel(flight.departureAirport)}</dd></div>}<div><dt>Flexibilidade</dt><dd>{flight.allowOpenJaw ? 'Pode chegar e voltar por cidades diferentes' : 'Chegada e retorno pela mesma cidade'}{flight.area ? ' dentro da área marcada' : ''}{flight.maxAirportDistanceKm ? ` · até ${flight.maxAirportDistanceKm} km entre aeroportos` : ''}</dd></div></> : <><div><dt>Hotel selecionado</dt><dd>{hotel.property}</dd></div><div><dt>Estadias</dt><dd>{hotel.pattern === 'weekend' ? 'Sexta a domingo' : hotel.pattern === 'weekdays' ? 'Domingo a sexta' : 'Semana e fins de semana'} · próximos {hotel.horizonMonths} meses</dd></div>{hotel.checkIn && <div><dt>Datas definidas</dt><dd>{hotel.checkIn.split('-').reverse().join('/')} a {hotel.checkOut.split('-').reverse().join('/')}</dd></div>}</>}
           <div><dt>Viajantes</dt><dd>{kind === 'flight' ? flight.adults : hotel.adults} adulto(s)</dd></div>{mode === 'monitor' && <div><dt>Regra do alerta</dt><dd>{alertSummary}</dd></div>}
-        </dl>{kind === 'flight' && flight.destinationMode === 'trip' && flight.tripPlan && <TripSummary preview={previewTrip(flight.tripPlan)} transport={flight.tripPlan.transport} />}<div className="inline-note"><Info size={17} /><span>{mode === 'explore' ? 'Você verá os preços disponíveis agora para viajar nas datas pesquisadas.' : 'Seu alerta ficará salvo. Os avisos dependem de atualizações automáticas e um canal ativo.'}</span></div>
+        </dl>{kind === 'flight' && flight.destinationMode === 'trip' && flight.tripPlan && <TripSummary preview={previewTrip(flight.tripPlan)} transport={flight.tripPlan.transport} />}<div className="inline-note"><Info size={17} /><span>{mode === 'explore' ? 'Você verá os preços disponíveis agora para viajar nas datas pesquisadas.' : editing ? 'Alterar a viagem inicia uma nova referência de preços. O histórico anterior fica separado.' : 'Seu alerta ficará salvo. Os avisos dependem de atualizações automáticas e um canal ativo.'}</span></div>
       </>}
     </div>
     {error && <div className="error-message wizard-error" role="alert"><Info size={18} /><span>{error}</span></div>}
     <div className="form-actions wizard-actions"><div>{step > 0 && <button type="button" className="button button-secondary" onClick={() => { setStep(step - 1); setError(''); }}><ArrowLeft size={16} />Voltar</button>}</div><button className="button button-primary" disabled={submitting || (step === 0 && kind === 'hotel' && !hotel.propertyId)}>
       {submitting ? <LoaderCircle className="spin" size={18} /> : step < last ? <ArrowRight size={18} /> : mode === 'explore' ? <Search size={18} /> : <Bell size={18} />}
-      {submitting ? (mode === 'explore' ? 'Consultando preços…' : 'Criando alerta…') : step < last ? 'Continuar' : mode === 'explore' ? 'Ver preços agora' : 'Criar alerta'}
+      {submitting ? (mode === 'explore' ? 'Consultando preços…' : editing ? 'Salvando alterações…' : 'Criando alerta…') : step < last ? 'Continuar' : mode === 'explore' ? 'Ver preços agora' : editing ? 'Salvar alterações' : 'Criar alerta'}
     </button></div></>}
   </form>;
 }

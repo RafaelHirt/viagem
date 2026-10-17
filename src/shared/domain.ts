@@ -1,5 +1,6 @@
 import type { FlightQuery, GeoArea, HotelQuery, Monitor, Observation, TripPlan } from './types.ts'
-import { AIRPORTS, findAirport } from './airports.ts'
+import { AIRPORTS, findAirport, isAirportInArea } from './airports.ts'
+import { matchesWeekdays, tripDays } from './flight-dates.ts'
 export { AIRPORTS, findAirport } from './airports.ts'
 export type { Airport } from './airports.ts'
 
@@ -133,6 +134,18 @@ function optionalIata(value: unknown): string | undefined {
   return value === undefined || value === '' ? undefined : parseIata(value)
 }
 
+function optionalMonth(value: unknown, label: string): string | undefined {
+  if (value === undefined || value === '') return undefined
+  if (typeof value !== 'string' || !/^(20\d{2}|2100)-(0[1-9]|1[0-2])$/.test(value)) throw new Error(`${label} deve ser um mês válido.`)
+  return value
+}
+
+function optionalWeekdays(value: unknown): number[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || !value.length || value.length > 7 || value.some(day => !Number.isInteger(day) || day < 0 || day > 6) || new Set(value).size !== value.length) throw new Error('Escolha dias da semana válidos, sem repetição.')
+  return value.length === 7 ? undefined : [...value].sort((a, b) => a - b)
+}
+
 function optionalArea(value: unknown): GeoArea | undefined {
   if (value === undefined) return undefined
   const area = object(value, 'Escolha uma área válida no mapa.')
@@ -159,7 +172,9 @@ function optionalTripPlan(value: unknown): TripPlan | undefined {
   if (typeof plan.maxLegHours !== 'number' || !Number.isFinite(plan.maxLegHours) || plan.maxLegHours < 1 || plan.maxLegHours > 48) throw new Error('O limite por trecho deve estar entre 1 e 48 horas.')
   const flexibleOrder = boolean(plan.flexibleOrder, 'se a ordem dos países é livre')
   if (!flexibleOrder && plan.countryCodes.length !== countryCount) throw new Error('Escolha todos os países para fixar a ordem do roteiro.')
-  return { countryCount, areas, countryCodes: [...plan.countryCodes] as string[], transport: plan.transport as TripPlan['transport'], maxLegHours: plan.maxLegHours, flexibleOrder }
+  const startAirport = optionalIata(plan.startAirport)
+  if (startAirport && !findAirport(startAirport)) throw new Error('Selecione a primeira cidade do roteiro na lista de aeroportos.')
+  return { ...(startAirport ? { startAirport } : {}), countryCount, areas, countryCodes: [...plan.countryCodes] as string[], transport: plan.transport as TripPlan['transport'], maxLegHours: plan.maxLegHours, flexibleOrder }
 }
 
 function flightQuery(value: unknown): FlightQuery {
@@ -170,6 +185,21 @@ function flightQuery(value: unknown): FlightQuery {
   const departureDate = optionalDate(query.departureDate, 'A data de ida')
   const returnDate = optionalDate(query.returnDate, 'A data de volta')
   dates(departureDate, returnDate)
+  const startMonth = optionalMonth(query.startMonth, 'O início do período')
+  const endMonth = optionalMonth(query.endMonth, 'O fim do período')
+  if (Boolean(startMonth) !== Boolean(endMonth)) throw new Error('Informe o mês inicial e o mês final do período.')
+  if (startMonth && endMonth) {
+    const span = (Number(endMonth.slice(0, 4)) - Number(startMonth.slice(0, 4))) * 12 + Number(endMonth.slice(5)) - Number(startMonth.slice(5))
+    if (span < 0 || span > 23) throw new Error('Escolha um período em ordem, com no máximo 24 meses.')
+    if (departureDate && returnDate && (departureDate.slice(0, 7) < startMonth || returnDate.slice(0, 7) > endMonth)) throw new Error('A ida e a volta precisam estar dentro do período escolhido.')
+  }
+  const departureWeekdays = optionalWeekdays(query.departureWeekdays)
+  const returnWeekdays = optionalWeekdays(query.returnWeekdays)
+  if (departureDate && returnDate) {
+    const duration = tripDays(departureDate, returnDate)
+    if (duration < minDays || duration > maxDays) throw new Error('As datas exatas não correspondem à duração informada.')
+    if (!matchesWeekdays({ departureWeekdays, returnWeekdays } as FlightQuery, departureDate, returnDate)) throw new Error('As datas exatas não correspondem aos dias da semana escolhidos.')
+  }
   const allowOpenJaw = boolean(query.allowOpenJaw, 'se permite aeroportos diferentes na chegada e na saída')
   const arrivalAirport = optionalIata(query.arrivalAirport)
   const departureAirport = optionalIata(query.departureAirport)
@@ -194,10 +224,17 @@ function flightQuery(value: unknown): FlightQuery {
   const area = optionalArea(query.area)
   const tripPlan = optionalTripPlan(query.tripPlan)
   if (area && tripPlan) throw new Error('Escolha uma área simples ou um roteiro com vários países.')
+  if (tripPlan?.startAirport && arrivalAirport && tripPlan.startAirport !== arrivalAirport) throw new Error('O aeroporto de chegada deve ser a primeira cidade do roteiro.')
+  for (const code of [arrivalAirport, departureAirport, tripPlan?.startAirport].filter((code): code is string => Boolean(code))) {
+    const airport = findAirport(code)
+    if (area && (!airport || !isAirportInArea(airport, area))) throw new Error('Os aeroportos de chegada e volta precisam estar dentro da área marcada.')
+    if (tripPlan && (!airport || !tripPlan.areas.some(area => isAirportInArea(airport, area)))) throw new Error('A primeira cidade e o aeroporto de volta precisam estar nas áreas do roteiro.')
+  }
   return {
     origin: parseIata(query.origin),
     destination: text(query.destination, 'um destino ou região'),
-    arrivalAirport, departureAirport, departureDate, returnDate,
+    arrivalAirport: arrivalAirport || tripPlan?.startAirport, departureAirport, departureDate, returnDate,
+    startMonth, endMonth, departureWeekdays, returnWeekdays,
     minDays, maxDays,
     horizonMonths: integer(query.horizonMonths, 'O horizonte da pesquisa', 1, 12),
     maxAirportDistanceKm,
@@ -250,6 +287,7 @@ export function validateMonitor(input: unknown): Monitor {
   }
   return {
     id,
+    ...(monitor.criteriaVersion === undefined ? {} : { criteriaVersion: integer(monitor.criteriaVersion, 'A versão dos critérios', 0, 1_000_000) }),
     kind: monitor.kind,
     name: text(monitor.name, 'um nome para o monitor'),
     query: monitor.kind === 'flight' ? flightQuery(monitor.query) : hotelQuery(monitor.query),

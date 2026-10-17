@@ -156,3 +156,15 @@ A documentação pública define `adults` e `price`, mas não assegura que o cam
 O menu “Criar Alertas” abre o formulário com mapa; “Alertas salvos” fica em uma aba separada. Salvar uma viagem inicia a primeira consulta. A falha da fonte preserva o cadastro e mostra erro, sem criar tarifa zero. Informações secundárias ficam recolhidas. Hotéis indisponíveis não oferecem mais uma caixa de busca sem conexão.
 
 A validação automatizada inclui latência simulada, recuperação após timeout, metadados, segurança e execução única dos jobs. Testes de navegador cobrem navegação, criação real na API local, erro real de configuração ausente, e a apresentação de ofertas explicitamente simuladas apenas no navegador. Isso não valida uma tarifa real da conta: a chave configurada no Netlify continua separada do ambiente de desenvolvimento.
+
+## Calendário, aeroportos e edição
+
+A busca aceita `startMonth`/`endMonth` inclusivos, com a ida e a volta dentro do período, além de `departureWeekdays`/`returnWeekdays` (domingo=0 a sábado=6). Meses explícitos substituem o horizonte relativo. A interface oferece sexta–domingo, dias personalizados e datas exatas; o preset de fim de semana começa em dois dias. Datas exatas substituem preferências flexíveis ocultas.
+
+A descoberta recebe a janela e os dias no texto da consulta, mas sua interpretação não é presumida: os resultados são filtrados por datas, duração e dias reais. As três combinações alternativas também usam pares válidos, incluindo retorno dentro do mês final. Períodos vencidos e combinações impossíveis não consomem consultas. A escolha independente dos aeroportos de chegada e volta funciona também no mapa; pares diferentes usam multicidade nas combinações consultadas. Ainda é uma amostra, não uma varredura de todos os fins de semana/meses.
+
+`PUT /api/monitors/:id` permite editar critérios, nome, regra e canais. Mudanças de viagem incrementam `criteriaVersion`: observações anteriores são preservadas e exibidas separadamente, sem entrar na nova média ou no último preço. Mudar só o nome mantém a referência e não dispara outra consulta. Jobs já iniciados gravam na versão dos critérios que consultaram.
+
+MXP aparece como Milão–Malpensa, em vez da municipalidade Ferno, sem mudar suas coordenadas ou identidade. A base individual/total do preço e a seleção completa de retorno seguem não confirmadas; estas melhorias não validam automaticamente a tarifa real.
+
+Verificação local: 106 testes passaram. O navegador exercitou criação e edição persistentes na API, meses, sexta–domingo, dois aeroportos, partida fixa ao ampliar o raio, duração em datas exatas, validação de preferências impossíveis e telas de 390 a 1440px. A ausência de chave neste cloud retornou erro explícito; nenhuma tarifa autenticada foi validada nesta preparação.

@@ -3,6 +3,14 @@ import type { GeoArea, TravelMode, TripLeg, TripPlan, TripPreview, TripStop } fr
 
 export const TRAVEL_MODES: Record<TravelMode, string> = { train: 'Trem', car: 'Carro', flight: 'Avião' }
 export const DEFAULT_TRIP: TripPlan = { countryCount: 3, areas: [], countryCodes: [], transport: 'train', maxLegHours: 6, flexibleOrder: true }
+export function withTripStart(plan: TripPlan, code: string): TripPlan {
+  const airport = findAirport(code)
+  if (!airport) return { ...plan, startAirport: undefined }
+  return { ...plan, startAirport: airport.code,
+    areas: [{ lat: airport.lat, lon: airport.lon, radiusKm: plan.areas[0]?.radiusKm ?? 800 }, ...plan.areas.slice(1)],
+    countryCodes: [airport.countryCode, ...plan.countryCodes.filter(country => country !== airport.countryCode)].slice(0, plan.countryCount),
+    flexibleOrder: plan.countryCodes[0] === airport.countryCode ? plan.flexibleOrder : true }
+}
 export function distanceKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
   const rad = (d: number) => d * Math.PI / 180
   const term = Math.sin(rad(b.lat - a.lat) / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lon - a.lon) / 2) ** 2
@@ -42,6 +50,8 @@ export function previewTrip(plan: TripPlan, entryCode?: string, exitCode?: strin
   const available = AIRPORTS.filter(airport => airportInTrip(airport, plan))
   const countries = new Set(available.map(airport => airport.countryCode))
   if (countries.size < plan.countryCount || plan.countryCodes.some(code => !countries.has(code))) return fail('insufficient-countries', `As áreas precisam conter ${plan.countryCount} países diferentes e todos os países marcados. Amplie as bolhas ou adicione outra área.`)
+  if (plan.startAirport && entryCode && plan.startAirport !== entryCode) return fail('no-route', 'Esta oferta não chega pela primeira cidade escolhida para o roteiro.')
+  entryCode = entryCode || plan.startAirport
   const entry = entryCode ? findAirport(entryCode) : undefined
   const exit = exitCode ? findAirport(exitCode) : undefined
   if ((entryCode && (!entry || !airportInTrip(entry, plan))) || (exitCode && (!exit || !airportInTrip(exit, plan)))) return fail('no-route', 'Os aeroportos de chegada e retorno precisam estar nas áreas do roteiro.')

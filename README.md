@@ -32,11 +32,13 @@ Consulte [Publicação e configuração](docs/DEPLOY.md) para as variáveis de f
 
 - Separar exploração imediata e criação de alertas em formulários por etapas, tanto para passagens quanto para hotéis.
 - Encontrar aeroportos digitando cidade ou nome, escolher regiões sugeridas e marcar uma área circular no mapa, sem precisar conhecer códigos ou estimar quilômetros.
-- Experimentar roteiros por dois a cinco países com várias áreas, países livres ou obrigatórios, ordem editável e faixas indicativas de tempo de deslocamento. A prévia geográfica não consulta rotas reais ou preços internos.
+- Planejar roteiros por dois a cinco países a partir de uma cidade escolhida, com área ajustável, países livres ou obrigatórios e faixas indicativas de tempo por trecho. A prévia geográfica não consulta rotas reais ou preços internos.
 - Explorar passagens com datas exatas ou descobrir ofertas com duração variável; apresenta a cobertura retornada, sem inventar preços.
 - Consultar itinerários com cidades de chegada e saída diferentes em datas definidas e validar a distância entre aeroportos conhecidos.
 - Criar, pausar, consultar e excluir monitores, com persistência local ou Netlify Blobs no deploy.
 - Calcular a média dos menores preços diários anteriores, excluindo hoje, dados incompletos e dias ausentes.
+- Escolher períodos entre meses (por exemplo, fevereiro a outubro de 2027), dias de ida/volta como sexta–domingo, datas exatas e aeroportos independentes de chegada/retorno.
+- Editar alertas salvos; mudanças de viagem preservam o histórico anterior separado da nova referência.
 - Proteger a API por senha e manter credenciais fora do navegador.
 
 ## Limites atuais

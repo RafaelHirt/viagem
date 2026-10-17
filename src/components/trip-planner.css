@@ -67,3 +67,9 @@
 .trip-country-picker > summary { cursor: pointer; color: #41634f; font-size: 12px; font-weight: 600; }
 .trip-country-picker > summary > span { font-weight: 400; color: #879780; }
 .trip-country-picker > p { margin-top: 14px; }
+.trip-planner > .autocomplete-field { margin: 20px 0; }
+.trip-start-note { font-size: 12px; line-height: 1.8; color: #5f785f; margin: 16px 0 6px; }
+.trip-map-options, .trip-model-explanation { margin-top: 18px; font-size: 12px; line-height: 1.8; color: #6c8068; }
+.trip-map-options > summary, .trip-model-explanation > summary { cursor: pointer; }
+.trip-map-options p, .trip-model-explanation p { margin: 12px 0; }
+.trip-map-options .trip-area-tabs { margin-top: 14px; }
