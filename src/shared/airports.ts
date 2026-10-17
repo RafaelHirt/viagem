@@ -25,6 +25,11 @@ const byCode = new Map(AIRPORTS.map((airport) => [airport.code, airport]))
 export const REGIONS = [
   { id: 'europe', label: 'Europa', center: { lat: 49, lon: 12 }, scale: 3.4 },
   { id: 'brazil', label: 'Brasil', center: { lat: -14, lon: -51 }, scale: 2.5 },
+  { id: 'brazil-northeast', label: 'Nordeste', center: { lat: -8.5, lon: -41.5 }, scale: 5.4 },
+  { id: 'brazil-north', label: 'Norte', center: { lat: -3.5, lon: -59 }, scale: 3.4 },
+  { id: 'brazil-southeast', label: 'Sudeste', center: { lat: -20.5, lon: -44.5 }, scale: 6 },
+  { id: 'brazil-south', label: 'Sul', center: { lat: -27.5, lon: -51 }, scale: 6.5 },
+  { id: 'brazil-central-west', label: 'Centro-Oeste', center: { lat: -15, lon: -54.5 }, scale: 4.3 },
   { id: 'south-america', label: 'América do Sul', center: { lat: -20, lon: -60 }, scale: 1.9 },
   { id: 'north-america', label: 'América do Norte', center: { lat: 41, lon: -100 }, scale: 1.7 },
   { id: 'central-america', label: 'América Central e Caribe', center: { lat: 17, lon: -78 }, scale: 4 },
@@ -88,9 +93,22 @@ const centralAmerica = new Set(['BZ', 'CR', 'SV', 'GT', 'HN', 'NI', 'PA', 'AI', 
   'BQ', 'VG', 'KY', 'CU', 'CW', 'DM', 'DO', 'GD', 'GP', 'HT', 'JM', 'MQ', 'MS', 'PR', 'BL', 'KN',
   'LC', 'MF', 'VC', 'SX', 'TT', 'TC', 'VI'])
 
+// IBGE macro-regions, matched to the catalogue's ISO 3166-2 state codes.
+// Camera centres above only affect the map; they never define regional membership.
+const brazilStatesByRegion: Record<string, readonly string[]> = {
+  'brazil-northeast': ['BR-AL', 'BR-BA', 'BR-CE', 'BR-MA', 'BR-PB', 'BR-PE', 'BR-PI', 'BR-RN', 'BR-SE'],
+  'brazil-north': ['BR-AC', 'BR-AP', 'BR-AM', 'BR-PA', 'BR-RO', 'BR-RR', 'BR-TO'],
+  'brazil-southeast': ['BR-ES', 'BR-MG', 'BR-RJ', 'BR-SP'],
+  'brazil-south': ['BR-PR', 'BR-RS', 'BR-SC'],
+  'brazil-central-west': ['BR-DF', 'BR-GO', 'BR-MT', 'BR-MS'],
+}
+
 export function matchesRegion(airport: Airport, region: string): boolean {
   const value = normalize(region)
   const id = REGIONS.find((item) => item.id === value || normalize(item.label) === value)?.id
+  if (id && brazilStatesByRegion[id]) {
+    return airport.countryCode === 'BR' && brazilStatesByRegion[id].includes(airport.region)
+  }
   switch (id) {
     case 'anywhere': return true
     case 'brazil': return airport.countryCode === 'BR'

@@ -312,6 +312,58 @@ describe('real price provider adapter', () => {
     expect(result.offers.map((offer) => offer.arrivalAirport)).toEqual(['CDG']);
   });
 
+  it('only normalizes Northeast Brazil deals from the selected states and sends a real discovery target', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-17T13:00:00Z'));
+    const deal = { price: 1500, name: 'Nordeste', country: 'Brazil', departure_airport_code: 'GRU', start_date: '2026-11-10', end_date: '2026-11-21' };
+    vi.mocked(fetch).mockResolvedValue(response({ deals: ['REC', 'FOR', 'SSA', 'NAT', 'GYN', 'GIG', 'MAO'].map(arrival_airport_code => ({ ...deal, arrival_airport_code })) }));
+    const result = await explore('flight', { ...query, destination: 'Nordeste', arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined });
+    expect(result.offers.map(offer => offer.arrivalAirport)).toEqual(['REC', 'FOR', 'SSA', 'NAT']);
+    expect(result.coverage.complete).toBe(false);
+    expect(result.warnings.join(' ')).toContain('3 resultado(s)');
+    const text = new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams.get('query');
+    expect(text).toContain('Northeast Brazil');
+    expect(text).not.toContain('undefined');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('intersects a selected named region with the optional map area even when the circle extends outside it', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-17T13:00:00Z'));
+    const deal = { price: 1500, name: 'Destination', departure_airport_code: 'GRU', start_date: '2026-11-10', end_date: '2026-11-21' };
+    vi.mocked(fetch).mockResolvedValue(response({ deals: ['REC', 'FOR', 'GYN', 'GIG', 'MAO'].map(arrival_airport_code => ({ ...deal, arrival_airport_code })) }));
+    const result = await explore('flight', { ...query, destination: 'brazil-northeast', area: { lat: -10, lon: -45, radiusKm: 5000 }, arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined });
+    expect(result.offers.map(offer => offer.arrivalAirport)).toEqual(['REC', 'FOR']);
+    const text = new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams.get('query');
+    expect(text).toContain('Northeast Brazil');
+    expect(text).not.toContain('undefined');
+  });
+
+  it('rejects conflicting regional arrival and return airport choices before consuming a provider request', async () => {
+    for (const conflicting of [
+      { arrivalAirport: 'GIG', departureAirport: 'GIG' },
+      { arrivalAirport: 'REC', arrivalAirports: ['REC', 'GIG'], departureAirport: 'REC' },
+      { arrivalAirport: 'REC', departureAirport: 'GYN' },
+      { arrivalAirport: 'REC', departureAirport: 'REC', departureAirports: ['REC', 'MAO'] },
+    ]) {
+      await expect(explore('flight', { ...query, destination: 'Nordeste', ...conflicting })).rejects.toMatchObject({ code: 'AIRPORT_OUTSIDE_REGION', statusCode: 400 });
+    }
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('uses regional hubs for bounded Northeast fallback searches instead of airports outside the region', async () => {
+    vi.mocked(fetch).mockImplementation(async input => {
+      const params = new URL(String(input)).searchParams;
+      if (params.get('engine') === 'google_flights_deals') return response({ deals: [] });
+      return response({ search_parameters: { currency: 'BRL', adults: 2 }, best_flights: [{ price: 1200, flights: [{ departure_airport: { id: params.get('departure_id'), time: params.get('outbound_date') + ' 18:00' }, arrival_airport: { id: params.get('arrival_id') } }] }] });
+    });
+    const result = await explore('flight', { ...query, origin: 'GYN', destination: 'brazil-northeast', adults: 2, arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined });
+    expect(result.offers.map(offer => offer.arrivalAirport)).toEqual(['REC', 'FOR', 'SSA']);
+    expect(result.coverage).toMatchObject({ complete: false, queries: 4 });
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams.get('query')).toContain('Northeast Brazil');
+  });
+
   it('uses the drawn circle as the destination and excludes airports outside it', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-17T13:00:00Z'));

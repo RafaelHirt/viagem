@@ -3,7 +3,7 @@ import { DEFAULT_TRIP, withRequiredCity, withRequiredCities, previewTrip } from 
 import { requiredCityCodes, tripCityName, tripCityCountry, searchTripCities } from '../src/shared/trip-cities'
 import { flightDraftFromQuery, flightQueryFromDraft } from '../src/shared/flight-draft'
 import type { FlightQuery } from '../src/shared/types'
-import { railConnections, railLeg, railTripOptions } from '../src/shared/rail-network'
+import { railConnectionGroups, railConnections, railLeg, railTripOptions } from '../src/shared/rail-network'
 import { validateMonitor } from '../src/shared/domain'
 const paris=()=>({...withRequiredCity(DEFAULT_TRIP,'CDG'),maxLegHours:3})
 describe('required European city and per-leg train constraints',()=>{
@@ -39,6 +39,38 @@ describe('required European city and per-leg train constraints',()=>{
 })
 
 describe('multiple mandatory cities',()=>{
+ it('lists timed train references from both Paris and Vienna instead of only the first selected city',()=>{
+  const plan={...withRequiredCities(paris(),['CDG','VIE']),maxLegHours:48,areas:[{lat:49,lon:6,radiusKm:1600}]}
+  const groups=railConnectionGroups(plan)
+  expect(groups.map(group=>group.origin.city)).toEqual(['Paris','Viena'])
+  expect(groups[0].connections.map(item=>item.destination.city)).toContain('Bruxelas')
+  expect(groups[1].connections.map(item=>item.destination.city)).toEqual(expect.arrayContaining(['Salzburgo','Budapeste','Praga']))
+  for(const group of groups) for(const {destination,leg} of group.connections) {
+   expect(leg).toEqual(railLeg(group.origin.airportCode,destination.airportCode))
+   expect(leg.maxMinutes).toBeLessThanOrEqual(48*60)
+  }
+  const options=railTripOptions(plan)
+  expect(options.length).toBeGreaterThan(0)
+  expect(options.every(option=>['Paris','Viena'].every(city=>option.stops.some(stop=>stop.city===city)))).toBe(true)
+ })
+ it('updates both mandatory cities when hours or areas change, without treating direct connections as a complete route',()=>{
+  const plan={...withRequiredCities(paris(),['CDG','MXP']),areas:[{lat:49,lon:6,radiusKm:1200}]}
+  const three=railConnectionGroups(plan),two=railConnectionGroups({...plan,maxLegHours:2})
+  expect(three.map(group=>group.origin.city)).toEqual(['Paris','Milão'])
+  expect(three[1].connections.map(item=>item.destination.city)).toContain('Veneza')
+  expect(two[1].connections.map(item=>item.destination.city)).not.toContain('Veneza')
+  expect(two[0].connections.map(item=>item.destination.city)).not.toContain('Lyon')
+  expect(three.every(group=>group.connections.every(item=>item.leg.maxMinutes<=180))).toBe(true)
+  expect(three[0].connections.some(item=>item.destination.city==='Milão')).toBe(false)
+  expect(railTripOptions(plan).every(option=>option.stops.some(stop=>stop.city==='Paris')&&option.stops.some(stop=>stop.city==='Milão'))).toBe(true)
+  const restricted=railConnectionGroups({...plan,areas:paris().areas})
+  expect(restricted[1].connections.some(item=>item.destination.city==='Veneza')).toBe(false)
+ })
+ it('keeps an unsupported mandatory city visible with an empty reference list rather than hiding the city',()=>{
+  const groups=railConnectionGroups(withRequiredCities(paris(),['CDG','LIS']))
+  expect(groups.map(group=>group.origin.city)).toEqual(['Paris','Lisboa'])
+  expect(groups[1].connections).toEqual([])
+ })
  it('finds familiar city names instead of the airport municipality and groups airports of one city',()=>{
   expect(tripCityName(searchTripCities('Lyon')[0].code)).toBe('Lyon')
   expect(tripCityName(searchTripCities('Estrasburgo')[0].code)).toBe('Estrasburgo')

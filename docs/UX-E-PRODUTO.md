@@ -4,19 +4,23 @@ Revisão em 17/10/2026. Uso pessoal por senha mantido por decisão do usuário. 
 
 ## Fluxo principal
 
-1. Escolher origem, destino ou de uma a cinco cidades obrigatórias do roteiro. As cidades podem estar na entrada, no meio ou na saída. O total escolhido conta países distintos: Paris + Lyon definem um país; Paris + Milão definem dois. Com três países desejados, o restante fica livre. O formulário mostra essa contagem, permite remover cidades e amplia a área quando uma nova cidade fica fora dela.
-2. Definir período, dias, duração e viajantes. Aeroportos da mesma cidade podem ser comparados juntos; o formulário mostra seus nomes, não exige conhecer IATA.
-3. Opcionalmente marcar **Quero acompanhar o preço desta viagem**, informar nome/e-mail e regra. O botão final passa a **Buscar e criar alerta**, deixando a ação explícita. Uma falha na pesquisa preserva o alerta; repetir a mesma busca na sessão reutiliza o cadastro conhecido.
-4. Comparar resultados ordenados. Horários, duração e escalas distinguem voos com preço/companhia iguais. Apenas duplicações comprovadas são removidas; dados insuficientes não são tratados como prova de duplicidade.
-5. Criar um alerta depois da busca continua disponível. Quando ele já foi criado no formulário, a ação mostra **Ver meu alerta**. O CTA tem contraste, animação única de entrada e permanece visível no celular. A preferência de movimento reduzido é respeitada.
-6. Em Meus alertas, editar critérios, consultar, ordenar e abrir histórico. O histórico tem fechamento textual, Esc, contenção/restauração do foco e link da passagem quando seguro.
-7. Configurações mostra os canais disponíveis, o estado da atualização e os caminhos para buscar ou ver alertas. Chaves, fornecedores, Netlify e agendamento ficam dentro de **Área técnica · para quem administra**. WhatsApp é mostrado como indisponível, sem botão que simule uma conexão.
+1. Informar a origem e responder **Para onde você quer viajar?** no mesmo campo para cidade/aeroporto ou região, como Recife, Nordeste ou Europa. O formulário começa sem destino escolhido. Sugestões rápidas ajudam quem ainda não decidiu; não é necessário escolher uma ferramenta nem usar o mapa.
+2. Uma região compara cidades dentro dela. **Limitar a busca a uma área no mapa (opcional)** fica recolhido e só carrega o mapa ao abrir; fechar preserva a área. Remover a área volta à região inteira. Nordeste, Norte, Sudeste, Sul e Centro-Oeste usam seus estados, não círculos aproximados. Uma área opcional restringe a região, e aeroportos fora dela são rejeitados antes de consumir a fonte. Recortes antigos com rótulo livre continuam como áreas livres.
+3. **Montar roteiro por vários países** abre o planejador com de uma a cinco cidades obrigatórias. As cidades podem estar na entrada, no meio ou na saída. O total escolhido conta países distintos: Paris + Lyon definem um país; Paris + Milão definem dois. Com três países desejados, o restante fica livre. O formulário mostra essa contagem, permite remover cidades e amplia a área quando uma nova cidade fica fora dela.
+4. Definir período, dias, duração e viajantes. Aeroportos da mesma cidade podem ser comparados juntos; o formulário mostra seus nomes, não exige conhecer IATA.
+5. Opcionalmente marcar **Quero acompanhar o preço desta viagem**, informar nome/e-mail e regra. O botão final passa a **Buscar e criar alerta**, deixando a ação explícita. Uma falha na pesquisa preserva o alerta; repetir a mesma busca na sessão reutiliza o cadastro conhecido.
+6. Comparar resultados ordenados. Horários, duração e escalas distinguem voos com preço/companhia iguais. Apenas duplicações comprovadas são removidas; dados insuficientes não são tratados como prova de duplicidade.
+7. Criar um alerta depois da busca continua disponível. Quando ele já foi criado no formulário, a ação mostra **Ver meu alerta**. O CTA tem contraste, animação única de entrada e permanece visível no celular. A preferência de movimento reduzido é respeitada.
+8. Em Meus alertas, editar critérios, consultar, ordenar e abrir histórico. O histórico tem fechamento textual, Esc, contenção/restauração do foco e link da passagem quando seguro.
+9. Configurações mostra os canais disponíveis, o estado da atualização e os caminhos para buscar ou ver alertas. Chaves, fornecedores, Netlify e agendamento ficam dentro de **Área técnica · para quem administra**. WhatsApp é mostrado como indisponível, sem botão que simule uma conexão.
 
 ## Cidades obrigatórias e comparação de preço
 
 Todas as cidades devem aparecer em cada prévia anexada a uma cotação. Paris + Milão com três países e até três horas por trecho, por exemplo, pode passar por cidades da Suíça; cada conexão precisa obedecer ao limite. Paris + Lyon continua exigindo outros dois países. Na Europa ferroviária, cidades fora da rede de referência não recebem conexões inventadas.
 
 O algoritmo mantém uma busca limitada de combinações. Na busca aérea compara as tarifas retornadas para aeroportos de entrada/saída de roteiros compatíveis, preservando datas e passageiros. Não procura exaustivamente todos os terceiros países nem calcula o menor custo da viagem inteira: trens, hotéis, deslocamentos até aeroportos e atividades não estão cotados. As possibilidades no mapa são referências geográficas/ferroviárias, não uma ordenação por custo total.
+
+O roteiro com todas as cidades aparece antes do mapa. A lista auxiliar de trens agrupa **todas** as cidades obrigatórias, com faixas de tempo por ligação. Paris + Viena não mostra apenas vizinhos de Paris. As ligações individuais ficam recolhidas; podem ser exibidas no mapa com cores e legendas por origem. Essa lista não representa um roteiro completo, nem todos os trens possíveis. Cada mudança no limite de horas atualiza todas as origens.
 
 ## Estados que devem continuar honestos
 
@@ -39,6 +43,8 @@ Slogan curto, com foco em economia: **Partiu. Viaje por menos.** O rodapé já u
 
 Alternativa para testar: **Seu próximo destino. Por menos.** Evitar prometer o menor preço garantido. A interface preserva o verde e fonte sem serifa, com texto principal legível, contraste e ações identificáveis sem depender de animação.
 
+O usuário decidiu manter a marca e o endereço atuais enquanto avalia opções. Outras sugestões: **TarifaBoa**, **Baixou Passagens** e **Radar de Tarifas**. Não foi verificada a disponibilidade de marca, nome empresarial ou domínio; não houve rebranding, renomeação do projeto ou registro de endereço.
+
 ## WhatsApp
 
 A integração ainda não foi implementada. O caminho é a WhatsApp Business Platform, por API da Meta ou provedor como Twilio. Para um piloto: habilitar uma conta/número de empresa, configurar a credencial no servidor, obter autorização do destinatário e aprovar o modelo de mensagem para avisos proativos. Um cadastro no aplicativo WhatsApp Business, sozinho, não conecta a API.
@@ -59,6 +65,8 @@ Priorizar a validação de tarifas e de um envio real de e-mail antes de abrir c
 
 Começar com pesquisa limitada gratuita, alertas essenciais e links afiliados quando houver contrato que permita a integração. Uma assinatura pode cobrar por mais alertas, frequência de atualização, filtros e planejamento de vários países. Uma faixa de R$19,90–39,90/mês pode ser uma hipótese de teste, sem tratar isso como preço validado ou previsão de faturamento.
 
+A unidade mais clara para um plano é **viagens acompanhadas ao mesmo tempo**. Um alerta representa uma busca salva com origem, destino/região, passageiros, datas e regra; não cada mensagem recebida. Exemplo conceitual: 1 viagem gratuita e planos de 3 ou 10 viagens simultâneas, com frequência e amplitude de busca definidas. Avisos de queda não são cobrados um a um. Para viajantes ocasionais, testar um passe de 30 dias para acompanhar uma viagem pode fazer mais sentido que assinatura contínua. Os números são hipóteses: medir consumo por consulta, frequência, custo de mensagens e disposição de pagar antes de definir preço. Uma busca ampla ou com vários países pode custar mais que uma rota fixa. Não há planos pagos, cobrança ou promessa de atualização premium implementados.
+
 Afiliados de hotéis, seguro e atividades podem complementar a receita. O conector de hotéis ainda está pendente; não anunciar parceria ou comissão existente. Patrocínios, se houver, precisam ser identificados e separados da classificação dos resultados por preço.
 
 Banners podem gerar receita, mas dependem de volume de visualizações e do valor efetivo pago por mil visualizações (RPM). Receita bruta aproximada = visualizações ÷1.000 × RPM; lucro desconta consultas à API, envio, hospedagem, suporte e demais despesas. Não há RPM nem tráfego medidos para prever o lucro deste produto. Banners não foram instalados; a hipótese inicial mais alinhada é afiliados e assinatura de alertas, preservando a experiência de busca.
@@ -71,6 +79,8 @@ Antes de vender, validar tarifas/retornos e envio real, confirmar direito de uso
 
 Testes automatizados cobrem distinção de voos, ordenação, aeroportos alternativos enviados à fonte em uma chamada, confirmação idempotente de cadastro, comparação histórica e cidade obrigatória em qualquer posição com limites ferroviários por trecho. A QA do navegador usa API/armazenamento locais reais e tarifas/logos explicitamente simulados; não comprova uma tarifa, trem ou entrega de e-mail ao vivo.
 
-Na revisão ampliada passaram138 testes automatizados e o build TypeScript/Vite. A cobertura inclui múltiplas cidades obrigatórias, duas cidades no mesmo país, normalização de aeroportos da mesma cidade, nomes reconhecíveis em vez de municípios dos aeroportos, preservação ao editar e exigência de todas as cidades nas cotações. A QA local percorreu criação durante a busca, aeroportos alternativos, 30%/180 dias, ordenação, duplicatas, logo/fallback, CTA móvel, histórico com Esc/foco/link e conexões de2–48h na prévia. Não houve tarifa, trem ou entrega de e-mail ao vivo verificados.
+Na revisão ampliada passaram148 testes automatizados e o build TypeScript/Vite. A cobertura inclui múltiplas cidades obrigatórias, duas cidades no mesmo país, normalização de aeroportos da mesma cidade, nomes reconhecíveis em vez de municípios dos aeroportos, preservação ao editar e exigência de todas as cidades nas cotações. A QA local percorreu criação durante a busca, aeroportos alternativos, 30%/180 dias, ordenação, duplicatas, logo/fallback, CTA móvel, histórico com Esc/foco/link e conexões de2–48h na prévia. Não houve tarifa, trem ou entrega de e-mail ao vivo verificados.
 
 A QA adicional verificou Paris + Milão e Paris + Lyon, contagem dos países livres, gravação/edição por API local real sem forçar aeroporto de entrada, Configurações sem chaves técnicas visíveis por padrão e larguras de390 a1440 px. Os preços da API de QA continuaram explicitamente simulados.
+
+Na revisão do destino leigo, passaram148 testes e o build. A QA local verificou destino vazio inicialmente; cidade/região no mesmo campo e seleção por teclado; mapa opcional sem carregamento fechado, com preservação da área e remoção para a região inteira; sexta–domingo entre fev/out2027 para2 adultos gravados via API; edição de região; digitação sem seleção não reutiliza destino antigo; Galeão/Santos Dumont; Paris+Viena com ligações de ambas as origens; remoção de área legada limpa o campo; larguras390–1440 sem overflow ou erro JS. Preços continuaram fixtures explícitas, sem cotação ou envio real.

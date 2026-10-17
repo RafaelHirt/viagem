@@ -83,6 +83,23 @@ async function requestSerpApi(parameters: Record<string, string>, budget: Search
 
 function textKey(value: string): string { return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase(); }
 
+function destinationRegion(destination: string) {
+  const key = textKey(destination);
+  return REGIONS.find(region => region.id === key || textKey(region.label) === key);
+}
+
+function enforceRegion(query: FlightQuery): void {
+  const region = destinationRegion(query.destination);
+  if (!region) return;
+  const codes = [...new Set([query.arrivalAirport, query.departureAirport, ...queryAirports(query, 'arrival'), ...queryAirports(query, 'departure')].filter((code): code is string => Boolean(code)))];
+  for (const code of codes) {
+    const airport = findAirport(code);
+    if (!airport || !matchesRegion(airport, region.id)) {
+      throw new ProviderError('AIRPORT_OUTSIDE_REGION', `Os aeroportos de chegada e retorno precisam ficar na região escolhida: ${region.label}.`, 400);
+    }
+  }
+}
+
 function daysBetween(start: string, end: string): number {
   return (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000;
 }
@@ -193,7 +210,7 @@ function normalizeExact(data: Json, query: FlightQuery, entry: string): Offer[] 
     if (!first || !last || price === undefined) return [];
     const actualOrigin = string(record(first.departure_airport).id);
     const actualArrival = string(record(last.arrival_airport).id);
-    if (!queryAirports(query, 'origin').includes(actualOrigin) || !(queryAirports(query, 'arrival').length ? queryAirports(query, 'arrival') : [entry]).includes(actualArrival)) return [];
+    if (!queryAirports(query, 'origin').includes(actualOrigin) || !(queryAirports(query, 'arrival').length ? queryAirports(query, 'arrival') : [entry]).includes(actualArrival) || !matchesDestination({ arrival_airport_code: actualArrival }, query)) return [];
     const flightDate = string(record(first.departure_airport).time).slice(0, 10);
     if (flightDate && flightDate !== query.departureDate) return [];
     const airlines = [...new Set(segments.map((segment) => string(segment.airline)).filter(Boolean))];
@@ -222,23 +239,22 @@ function matchesDestination(deal: Json, query: FlightQuery): boolean {
   const airport = findAirport(code);
   if (query.area && (!airport || !isAirportInArea(airport, query.area))) return false;
   if (query.tripPlan && (!airport || !airportInTrip(airport, query.tripPlan))) return false;
+  const region = destinationRegion(query.destination);
+  // A named region is the destination; an optional map area narrows it further.
+  // A legacy free-map label ("Área no mapa") has no regional restriction.
+  if (region && (!airport || !matchesRegion(airport, region.id))) return false;
   const requiredAirport = exactEntry(query) || (!query.allowOpenJaw ? query.departureAirport : undefined);
   if (queryAirports(query, 'arrival').length) return queryAirports(query, 'arrival').includes(code);
   if (requiredAirport) return code === requiredAirport;
-  // In map mode the circle is the destination. Its human label is not a
-  // second geographical filter (and may cross country/region borders).
   if (query.area || query.tripPlan) return true;
   const destination = textKey(query.destination);
-  const region = REGIONS.find((item) => item.id === destination || textKey(item.label) === destination ||
-    (destination === 'europe' && item.id === 'europe'));
-  if (region) {
-    return Boolean(airport && matchesRegion(airport, region.id));
-  }
+  if (region) return true;
   if (destination === textKey(string(deal.name)) || destination === textKey(string(deal.country))) return true;
   return searchAirports(query.destination, 100).some((item) => item.code === code);
 }
 
 async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadline: Date.now() + SEARCH_BUDGET_MS }, fallback = false): Promise<ExploreResult> {
+  enforceRegion(query); // Reject region/airport conflicts before consuming a query.
   enforceDistance(query); // Reject incompatible pairs before consuming a query.
   if (query.tripPlan) {
     const preview = previewTrip(query.tripPlan);
@@ -370,13 +386,19 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
         : array(data.deals).length ? 'Os preços recebidos não corresponderam às suas preferências. Isso não significa que não existam passagens.' : 'A seleção de promoções e as combinações consultadas não trouxeram preços. Isso não significa que não existam passagens para esse destino.' } };
 }
 
-const REGION_SEARCH: Record<string, string> = { 'europe': 'Europe', 'brazil': 'Brazil', 'south-america': 'South America', 'north-america': 'North America', 'central-america': 'Central America and the Caribbean', 'asia': 'Asia', 'africa': 'Africa', 'oceania': 'Oceania', 'anywhere': 'anywhere' };
+const REGION_SEARCH: Record<(typeof REGIONS)[number]['id'], string> = {
+  'europe': 'Europe', 'brazil': 'Brazil',
+  'brazil-northeast': 'Northeast Brazil', 'brazil-north': 'North Brazil',
+  'brazil-southeast': 'Southeast Brazil', 'brazil-south': 'South Brazil', 'brazil-central-west': 'Central-West Brazil',
+  'south-america': 'South America', 'north-america': 'North America', 'central-america': 'Central America and the Caribbean',
+  'asia': 'Asia', 'africa': 'Africa', 'oceania': 'Oceania', 'anywhere': 'anywhere',
+};
 function discoveryText(query: FlightQuery): string {
   const airport = exactEntry(query) ? findAirport(exactEntry(query)!) : undefined;
-  const region = REGIONS.find(item => item.id === query.destination || textKey(item.label) === textKey(query.destination));
+  const region = destinationRegion(query.destination);
   const countries = query.tripPlan ? (query.tripPlan.countryCodes.length ? query.tripPlan.countryCodes.map(code => ({ code })) : countriesInAreas(query.tripPlan.areas)) : query.area ? countriesInAreas([query.area]) : [];
   const countryNames = new Intl.DisplayNames(['en'], { type: 'region' });
-  const target = airport ? `${airport.city}, ${airport.country}` : countries.length ? countries.slice(0, 8).map(item => countryNames.of(item.code)).join(' or ') : region ? REGION_SEARCH[region.id] : query.destination;
+  const target = airport ? `${airport.city}, ${airport.country}` : region ? REGION_SEARCH[region.id] : countries.length ? countries.slice(0, 8).map(item => countryNames.of(item.code)).join(' or ') : query.destination;
   const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const weekdays = query.departureWeekdays?.length || query.returnWeekdays?.length ? ` Depart on ${query.departureWeekdays?.map(day => names[day]).join(' or ') || 'any day'}; return on ${query.returnWeekdays?.map(day => names[day]).join(' or ') || 'any day'}.` : '';
   return `Flights to ${target}. Trips lasting ${query.minDays} to ${query.maxDays} days.${weekdays}`;
@@ -384,7 +406,7 @@ function discoveryText(query: FlightQuery): string {
 
 /** A bounded fallback, never an exhaustive calendar or a claim of cheapest fare. */
 function sampleQueries(query: FlightQuery, start: Date, end: Date): FlightQuery[] {
-  const hubs = ['LIS', 'CDG', 'MAD', 'FCO', 'AMS', 'LHR', 'FRA', 'GRU', 'GIG', 'BSB', 'EZE', 'SCL', 'JFK', 'MIA', 'MEX', 'PTY', 'NRT', 'SIN', 'DXB', 'CAI', 'JNB', 'SYD'];
+  const hubs = ['LIS', 'CDG', 'MAD', 'FCO', 'AMS', 'LHR', 'FRA', 'GRU', 'GIG', 'BSB', 'REC', 'FOR', 'SSA', 'NAT', 'MAO', 'BEL', 'CNF', 'VIX', 'CWB', 'POA', 'FLN', 'GYN', 'CGB', 'CGR', 'EZE', 'SCL', 'JFK', 'MIA', 'MEX', 'PTY', 'NRT', 'SIN', 'DXB', 'CAI', 'JNB', 'SYD'];
   const explicit = exactEntry(query);
   const accepted = (code: string) => code !== query.origin && matchesDestination({ arrival_airport_code: code }, { ...query, departureAirport: undefined });
   const railOptions = query.tripPlan && requiredCityCodes(query.tripPlan).length && query.tripPlan.transport === 'train' ? railTripOptions(query.tripPlan) : [];

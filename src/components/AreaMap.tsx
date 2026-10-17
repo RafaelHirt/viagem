@@ -6,6 +6,7 @@ import type { GeometryCollection, Topology } from 'topojson-specification'
 import world from 'world-atlas/countries-110m.json'
 import { LocateFixed, Maximize2, Minus, Move, Plus, RotateCcw } from 'lucide-react'
 import type { GeoArea, TripPreview, TripStop } from '../shared/types'
+import type { RailConnectionGroup } from '../shared/rail-network'
 import { formatLeg } from '../shared/trip-planner'
 import { AIRPORTS, REGIONS, findAirport, isAirportInArea } from '../shared/airports'
 import './area-map.css'
@@ -23,6 +24,8 @@ interface AreaMapProps {
   heading?: string
   connectionStops?: TripStop[]
   connectionAnchor?: TripStop
+  connectionGroups?: RailConnectionGroup[]
+  requiredStops?: TripStop[]
 }
 
 const WIDTH = 900
@@ -30,6 +33,7 @@ const HEIGHT = 430
 const EARTH_RADIUS_KM = 6371
 const MIN_RADIUS = 100
 const MAX_RADIUS = 5000
+const CONNECTION_COLORS = ['#377c9d', '#8b658f', '#96713e', '#477f70', '#815f4e']
 const REFERENCE_AIRPORTS = ['CDG', 'LHR', 'LIS', 'MAD', 'FCO', 'AMS', 'BRU', 'BER', 'VIE', 'ATH', 'WAW', 'OSL', 'ARN', 'HEL', 'IST', 'GRU', 'GIG', 'BSB', 'GYN', 'REC', 'SSA', 'MAO', 'EZE', 'SCL', 'LIM', 'BOG', 'MEX', 'JFK', 'LAX', 'YYZ', 'DXB', 'CAI', 'JNB', 'NRT', 'ICN', 'SIN', 'BKK', 'DEL', 'SYD', 'AKL']
 const CITY_LABELS: Record<string, string> = { CDG: 'Paris', LHR: 'Londres', LIS: 'Lisboa', MAD: 'Madri', FCO: 'Roma', BRU: 'Bruxelas', BER: 'Berlim', VIE: 'Viena', ATH: 'Atenas', WAW: 'Varsóvia', ARN: 'Estocolmo', HEL: 'Helsinque', IST: 'Istambul', GRU: 'São Paulo', GIG: 'Rio de Janeiro', BSB: 'Brasília', GYN: 'Goiânia', EZE: 'Buenos Aires', MEX: 'Cidade do México', JFK: 'Nova York', CAI: 'Cairo', NRT: 'Tóquio', ICN: 'Seul', SIN: 'Singapura', DEL: 'Nova Délhi' }
 const countries = feature(
@@ -96,7 +100,7 @@ function clampRadius(radius: number) {
   return Math.min(MAX_RADIUS, Math.max(MIN_RADIUS, Math.round(radius / 25) * 25))
 }
 
-export default function AreaMap({ value, onChange, region, focusAirport, otherAreas = [], onSelectArea, areaNumber, tripPreview, readOnly = false, heading, connectionStops, connectionAnchor }: AreaMapProps) {
+export default function AreaMap({ value, onChange, region, focusAirport, otherAreas = [], onSelectArea, areaNumber, tripPreview, readOnly = false, heading, connectionStops, connectionAnchor, connectionGroups, requiredStops = [] }: AreaMapProps) {
   const [camera, setCamera] = useState<Camera>(() => regionCamera(region, focusAirport, value))
   const [dragging, setDragging] = useState(false)
   const [unitsPerPixel, setUnitsPerPixel] = useState(1)
@@ -105,6 +109,7 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
   const previousLocation = useRef({ region, focusAirport })
   const allAreas = [...(value ? [value] : []), ...otherAreas.map(item => item.area)]
   const previousAreaCount = useRef(0)
+  const requiredKey = requiredStops.map(city => city.airportCode).join(':')
   const labelId = useId()
   const helpId = useId()
   const sliderId = useId()
@@ -130,6 +135,11 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
     if (areaNumber && allAreas.length !== previousAreaCount.current && allAreas.length > 1) setCamera(cameraForAreas(allAreas))
     previousAreaCount.current = allAreas.length
   }, [allAreas.length, areaNumber])
+
+  useEffect(() => {
+    if (requiredStops.length > 1) setCamera(cameraForAreas([...allAreas, ...requiredStops.map(city => ({ lat: city.lat, lon: city.lon, radiusKm: 60 }))]))
+    // Fit when the chosen cities change, while keeping later map gestures intact.
+  }, [requiredKey])
 
   const projection = useMemo(() => projectionFor(camera), [camera])
   const path = useMemo(() => geoPath(projection), [projection])
@@ -158,7 +168,7 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
     const points = AIRPORTS.flatMap((airport) => {
       const point = projection([airport.lon, airport.lat])
       if (!point || point[0] < 10 || point[0] > WIDTH - 10 || point[1] < 10 || point[1] > HEIGHT - 10) return []
-      return [{ airport, point, inside: connectionStops ? connectionStops.some(city => city.airportCode === airport.code) || connectionAnchor?.airportCode === airport.code : (!!value && isAirportInArea(airport, value)) || otherAreas.some(item => isAirportInArea(airport, item.area)) }]
+      return [{ airport, point, inside: connectionGroups ? connectionGroups.some(group => group.origin.airportCode === airport.code || group.connections.some(item => item.destination.airportCode === airport.code)) : connectionStops ? connectionStops.some(city => city.airportCode === airport.code) || connectionAnchor?.airportCode === airport.code : (!!value && isAirportInArea(airport, value)) || otherAreas.some(item => isAirportInArea(airport, item.area)) }]
     })
     // Keep the map legible when the world is in view. The area count still uses the complete catalog.
     const occupied = new Set<string>()
@@ -168,22 +178,24 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
       occupied.add(cell)
       return true
     }).slice(0, 150)
-  }, [projection, value, otherAreas, connectionStops, connectionAnchor])
+  }, [projection, value, otherAreas, connectionStops, connectionAnchor, connectionGroups])
 
   const cityLabels = useMemo(() => {
-    const airports = [...REFERENCE_AIRPORTS.flatMap(code => findAirport(code) ?? []), ...includedAirports]
+    const airports = [...requiredStops.map(city => ({ code: city.airportCode, city: city.city, lat: city.lat, lon: city.lon })), ...REFERENCE_AIRPORTS.flatMap(code => findAirport(code) ?? []), ...includedAirports]
     const labels: { code: string; city: string; point: [number, number] }[] = []
     const cities = new Set<string>()
     for (const airport of airports) {
       const point = projection([airport.lon, airport.lat])
-      if (!point || point[0] < 15 || point[0] > WIDTH - 90 || point[1] < 22 || point[1] > HEIGHT - 15 || cities.has(airport.city)) continue
-      if (labels.some(label => Math.abs(label.point[0] - point[0]) < 110 && Math.abs(label.point[1] - point[1]) < 27)) continue
-      cities.add(airport.city)
-      labels.push({ code: airport.code, city: CITY_LABELS[airport.code] || (airport.city.length > 22 ? `${airport.city.slice(0, 20)}…` : airport.city), point })
+      const city = CITY_LABELS[airport.code] || (airport.city.length > 22 ? `${airport.city.slice(0, 20)}…` : airport.city)
+      const mandatory = requiredStops.some(stop => stop.airportCode === airport.code)
+      if (!point || point[0] < 15 || point[0] > WIDTH - 90 || point[1] < 22 || point[1] > HEIGHT - 15 || cities.has(city)) continue
+      if (!mandatory && labels.some(label => Math.abs(label.point[0] - point[0]) < 110 && Math.abs(label.point[1] - point[1]) < 27)) continue
+      cities.add(city)
+      labels.push({ code: airport.code, city, point })
       if (labels.length === 16) break
     }
     return labels
-  }, [projection, includedAirports])
+  }, [projection, includedAirports, requiredStops])
 
   function localPoint(event: ReactPointerEvent<SVGSVGElement>): [number, number] | null {
     const svg = svgRef.current
@@ -272,7 +284,7 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
       <div className="area-map-heading">
         <div>
           <h4 id={labelId}>{heading || (readOnly ? 'Destino desta busca' : areaNumber ? `Área ${areaNumber} do roteiro` : 'Marque sua área de viagem')}</h4>
-          <p id={helpId}>{readOnly ? value || otherAreas.length ? 'Áreas salvas para esta viagem.' : region || 'Destino selecionado' : value ? 'Arraste a bolha para mover. Puxe a borda para aumentar ou diminuir.' : 'Toque no mapa para criar sua área.'}</p>
+          <p id={helpId}>{readOnly ? value || otherAreas.length ? 'Áreas salvas para esta viagem.' : region || 'Destino selecionado' : tripPreview?.status === 'ready' ? 'Os números mostram a ordem deste roteiro. Arraste a bolha ou puxe a borda para ajustar onde procurar.' : value ? 'Arraste a bolha para mover. Puxe a borda para aumentar ou diminuir.' : 'Toque no mapa para criar sua área.'}</p>
         </div>
         {!readOnly && !areaNumber && <button type="button" className={`area-map-region-button ${!value ? 'is-active' : ''}`} onClick={() => onChange(undefined)}>
           {!value ? 'Toda a região' : 'Usar toda a região'}
@@ -302,6 +314,7 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
             </g>)}
             {areaPath && <path d={areaPath} className={`area-map-selection ${readOnly ? 'is-read-only' : ''}`} />}
             {connectionAnchor && connectionStops?.map(city => <path key={`connection-${city.airportCode}`} className="area-map-connection" d={path({type:'LineString',coordinates:[[connectionAnchor.lon,connectionAnchor.lat],[city.lon,city.lat]]}) || undefined}><title>{connectionAnchor.city} ↔ {city.city} · conexão de referência</title></path>)}
+            {connectionGroups?.flatMap((group, groupIndex) => group.connections.map(({ destination, leg }) => <path key={`connection-${group.origin.airportCode}-${destination.airportCode}`} className="area-map-connection" style={{ stroke: CONNECTION_COLORS[groupIndex % CONNECTION_COLORS.length] }} d={path({ type: 'LineString', coordinates: [[group.origin.lon, group.origin.lat], [destination.lon, destination.lat]] }) || undefined}><title>{group.origin.city} ↔ {destination.city} · {formatLeg(leg)} · ligação individual de referência</title></path>))}
             {tripPreview?.status === 'ready' && tripPreview.stops.slice(1).map((destination, index) => {
               const origin = tripPreview.stops[index]
               return <g key={`route-${index}`} className="area-map-route"><path d={path({ type: 'LineString', coordinates: [[origin.lon, origin.lat], [destination.lon, destination.lat]] }) ?? undefined} /></g>
@@ -315,12 +328,13 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
             {cityLabels.map(({ code, city, point }) => (
               <text key={`label-${code}`} x={point[0] + 9} y={point[1] - 9} className="area-map-city-label">{city}</text>
             ))}
-            {tripPreview?.status === 'ready' && tripPreview.stops.map((city,index) => {const point=projection([city.lon,city.lat]);return point && <g key={`stop-${index}`} className="area-map-route-stop"><circle cx={point[0]} cy={point[1]} r={10*unitsPerPixel}/><text x={point[0]} y={point[1]+4*unitsPerPixel} style={{fontSize:12*unitsPerPixel}}>{index+1}</text><title>{index+1}. {city.city}</title></g>})}
+            {tripPreview?.status === 'ready' && tripPreview.stops.map((city,index) => {const point=projection([city.lon,city.lat]);const mandatory=requiredStops.some(required=>required.airportCode===city.airportCode);return point && <g key={`stop-${index}`} className={`area-map-route-stop ${mandatory ? 'is-required' : ''}`}><circle cx={point[0]} cy={point[1]} r={(mandatory ? 13 : 10)*unitsPerPixel}/><text x={point[0]} y={point[1]+4*unitsPerPixel} style={{fontSize:12*unitsPerPixel}}>{index+1}</text><title>{index+1}. {city.city}{mandatory ? ' · cidade obrigatória' : ''}</title></g>})}
+            {tripPreview?.status !== 'ready' && requiredStops.map(city => { const point=projection([city.lon,city.lat]);return point && <g key={`required-${city.airportCode}`} className="area-map-required-stop"><circle cx={point[0]} cy={point[1]} r={8*unitsPerPixel}/><title>{city.city} · cidade obrigatória, sem roteiro encontrado</title></g> })}
             {otherAreas.map(({ area, index }) => { const center = projection([area.lon, area.lat]); return center && <g key={`badge-${index}`} data-other-area={index} className="area-map-area-badge"><circle cx={center[0]} cy={center[1]} r={12} /><text x={center[0]} y={center[1] + 4}>{index + 1}</text></g> })}
             {areaCenter && <g className="area-map-center">
               <circle cx={areaCenter[0]} cy={areaCenter[1]} r={8} />
               <circle cx={areaCenter[0]} cy={areaCenter[1]} r={2.5} />
-              {areaNumber && <text x={areaCenter[0]} y={areaCenter[1] - 15}>{areaNumber}</text>}
+              {areaNumber && tripPreview?.status !== 'ready' && <text x={areaCenter[0]} y={areaCenter[1] - 15}>{areaNumber}</text>}
             </g>}
             {!readOnly && areaPath && <path d={areaPath} className="area-map-resize-border" data-area-resize="true" vectorEffect="non-scaling-stroke" />}
             {!readOnly && resizeHandles.map(({ point: [x, y], bearing }) => <g key={bearing} className={`area-map-resize ${bearing % 180 ? 'horizontal' : 'vertical'}`} data-area-resize="true">
@@ -341,6 +355,8 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
         <div className="area-map-pan-hint"><Move size={12} />{value && !readOnly ? 'Arraste fora da bolha para mover o mapa' : 'Arraste para mover o mapa'}</div>
         <a className="area-map-attribution" href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noreferrer">Mapa: Natural Earth</a>
       </div>
+
+      {(tripPreview?.status === 'ready' || !!connectionGroups?.length) && <div className="area-map-legend" aria-label="Legenda do roteiro">{tripPreview?.status === 'ready' && <span><i className="is-route" />Roteiro sugerido</span>}{requiredStops.length > 0 && <span><i className="is-required" />Cidade obrigatória</span>}{(value || otherAreas.length > 0) && <span><i className="is-area" />Área de busca</span>}{connectionGroups?.map((group,index) => <span key={group.origin.airportCode}><i className="is-connection" style={{ borderColor: CONNECTION_COLORS[index % CONNECTION_COLORS.length] }} />Ligações extras de {group.origin.city}</span>)}</div>}
 
       {!readOnly && (value ? <div className="area-map-details">
         <div className="area-map-slider-heading">

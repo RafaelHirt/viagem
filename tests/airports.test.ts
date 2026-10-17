@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AIRPORTS, findAirport, isAirportInArea, labelAirport, matchesRegion, searchAirports } from '../src/shared/airports.ts'
+import { AIRPORTS, REGIONS, findAirport, isAirportInArea, labelAirport, matchesRegion, searchAirports } from '../src/shared/airports.ts'
 import { validateMonitor } from '../src/shared/domain.ts'
 import type { FlightQuery, GeoArea, Monitor } from '../src/shared/types.ts'
 
@@ -44,6 +44,39 @@ describe('airport catalogue and discovery', () => {
     expect(matchesRegion(findAirport('PTY')!, 'north-america')).toBe(false)
     expect(matchesRegion(findAirport('NRT')!, 'Ásia')).toBe(true)
     expect(matchesRegion(findAirport('CDG')!, 'anything unknown')).toBe(false)
+  })
+
+  it('matches Northeast Brazil by its states rather than a circle or the airport name', () => {
+    for (const code of ['REC', 'FOR', 'SSA', 'NAT', 'MCZ', 'AJU', 'JPA', 'SLZ', 'THE', 'BPS', 'FEN']) {
+      expect(matchesRegion(findAirport(code)!, 'Nordeste'), code).toBe(true)
+      expect(matchesRegion(findAirport(code)!, 'brazil-northeast'), code).toBe(true)
+    }
+    for (const code of ['GYN', 'GIG', 'MAO', 'GRU', 'CDG']) {
+      expect(matchesRegion(findAirport(code)!, 'Nordeste'), code).toBe(false)
+    }
+    expect(matchesRegion({ ...findAirport('REC')!, countryCode: 'US' }, 'Nordeste')).toBe(false)
+  })
+
+  it('partitions all 27 Brazilian state codes into five named macro-regions', () => {
+    const groups = [
+      { id: 'brazil-northeast', label: 'Nordeste', states: ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE'] },
+      { id: 'brazil-north', label: 'Norte', states: ['AC', 'AP', 'AM', 'PA', 'RO', 'RR', 'TO'] },
+      { id: 'brazil-southeast', label: 'Sudeste', states: ['ES', 'MG', 'RJ', 'SP'] },
+      { id: 'brazil-south', label: 'Sul', states: ['PR', 'RS', 'SC'] },
+      { id: 'brazil-central-west', label: 'Centro-Oeste', states: ['DF', 'GO', 'MT', 'MS'] },
+    ]
+    expect(new Set(groups.flatMap(group => group.states)).size).toBe(27)
+    for (const group of groups) {
+      expect(REGIONS.find(region => region.id === group.id)?.label).toBe(group.label)
+      for (const state of group.states) {
+        const airport = { ...findAirport('REC')!, region: `BR-${state}` }
+        expect(matchesRegion(airport, group.id)).toBe(true)
+        expect(matchesRegion(airport, group.label)).toBe(true)
+        expect(groups.filter(candidate => matchesRegion(airport, candidate.id))).toHaveLength(1)
+      }
+    }
+    expect(matchesRegion(findAirport('GYN')!, 'centro-oeste')).toBe(true)
+    expect(matchesRegion(findAirport('CDG')!, 'Europa')).toBe(true)
   })
 
   it('filters airports by the circle selected on a map, including across the date line', () => {

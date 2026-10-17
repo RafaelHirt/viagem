@@ -1,6 +1,6 @@
 import { findAirport, isAirportInArea } from './airports'
 import type { TripLeg, TripPlan, TripPreview, TripStop } from './types'
-import { requiredCityCodes } from './trip-cities'
+import { requiredCityCodes, tripCityName } from './trip-cities'
 
 /** Planning references, not a live timetable or proof of service on a travel date. */
 export const RAIL_SOURCES = {
@@ -63,10 +63,23 @@ export function railLeg(from: string, to: string): TripLeg | undefined {
   legCache.set(key, result); return result
 }
 function inAreas(city: TripStop, plan: TripPlan) { return plan.areas.some(area => isAirportInArea(findAirport(city.airportCode)!, area)) }
-export function railConnections(plan: TripPlan): TripStop[] {
-  const city = railCity(requiredCityCodes(plan)[0])
+export function railConnections(plan: TripPlan, cityCode = requiredCityCodes(plan)[0]): TripStop[] {
+  const city = railCity(cityCode)
   if (!city) return []
   return RAIL_CITIES.filter(next => inAreas(next,plan) && (railLeg(city.airportCode,next.airportCode)?.maxMinutes ?? Infinity) <= plan.maxLegHours*60)
+}
+export interface RailConnectionGroup {
+  origin: TripStop
+  connections: Array<{ destination: TripStop; leg: TripLeg }>
+}
+/** Direct planning references for every mandatory city; these groups are not a tour. */
+export function railConnectionGroups(plan: TripPlan): RailConnectionGroup[] {
+  return requiredCityCodes(plan).flatMap(code => {
+    const airport = findAirport(code)
+    const origin = railCity(code) || (airport ? { airportCode: code, city: tripCityName(code), country: airport.country, countryCode: airport.countryCode, lat: airport.lat, lon: airport.lon } : undefined)
+    if (!origin) return []
+    return [{ origin, connections: railConnections(plan, code).map(destination => ({ destination, leg: railLeg(code, destination.airportCode)! })) }]
+  })
 }
 interface Path { stops: TripStop[]; countries: string[]; mask: number; required: number; score: number }
 const countBits = (value:number) => value.toString(2).replaceAll('0','').length

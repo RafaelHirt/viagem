@@ -56,6 +56,18 @@ describe('travel dates and stored preferences', () => {
 })
 
 describe('alternative airports in an editable search',()=>{
+ it('reopens a region without a mandatory map and preserves an optional area through editing',()=>{
+  const region={...query,destination:'Nordeste'}
+  expect(flightDraftFromQuery(region).destinationMode).toBe('region')
+  expect(flightQueryFromDraft(flightDraftFromQuery(region))).toEqual(region)
+  const restricted={...region,area:{lat:-8.1,lon:-34.9,radiusKm:150},arrivalAirport:'REC'}
+  const draft=flightDraftFromQuery(restricted)
+  expect(draft.destinationMode).toBe('map')
+  expect(flightQueryFromDraft(draft)).toEqual(restricted)
+  const legacy={...query,destination:'Área no mapa',area:{lat:49,lon:2,radiusKm:500}}
+  expect(flightDraftFromQuery(legacy).destinationMode).toBe('map')
+  expect(flightQueryFromDraft(flightDraftFromQuery(legacy))).toEqual(legacy)
+ })
  it('preserves airport selections through form editing and rejects stale, duplicate or out-of-area alternatives',()=>{
   const original={...query,origin:'GIG',originAirports:['GIG','SDU'],arrivalAirport:'CDG',arrivalAirports:['CDG','ORY'],departureAirport:'MXP',departureAirports:['MXP','LIN']}
   expect(flightQueryFromDraft(flightDraftFromQuery(original))).toEqual(original)

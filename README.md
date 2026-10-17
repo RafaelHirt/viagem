@@ -31,11 +31,13 @@ Consulte [Publicação e configuração](docs/DEPLOY.md) para as variáveis de f
 ## O que esta primeira versão faz
 
 - Buscar passagens em um único fluxo, definir o alerta durante o preenchimento ou criá-lo depois do resultado, sem repetir a viagem. Os hotéis permanecem indisponíveis enquanto o conector não estiver pronto.
+- Digitar cidade ou região na pergunta **Para onde você quer viajar?**, sem destino predefinido nem mapa obrigatório. Regiões brasileiras como Nordeste usam estados reais; limitar uma região no mapa é opcional.
 - Comparar aeroportos alternativos da mesma cidade na mesma consulta (como Galeão/Santos Dumont e Charles de Gaulle/Orly).
 - Ordenar resultados, distinguir horários/escalas, remover duplicações comprovadas e mostrar logos fornecidos pela fonte.
 - Enviar confirmação de cadastro por e-mail quando o transporte estiver configurado, com controle de duplicidade.
 - Encontrar aeroportos digitando cidade ou nome, escolher regiões sugeridas e marcar uma área circular no mapa, sem precisar conhecer códigos ou estimar quilômetros.
 - Planejar roteiros por dois a cinco países incluindo de uma a cinco cidades obrigatórias em qualquer posição. Cidades no mesmo país contam como um país; os países restantes ficam livres. Área ajustável e limite por trecho são preservados. A prévia ferroviária europeia usa conexões de referência; horários atuais e preços internos não são consultados. A comparação é entre as passagens aéreas amostradas, sem garantia do menor custo da viagem inteira.
+- Ver o roteiro completo e ligações ferroviárias separadas para todas as cidades obrigatórias, com tempos e legendas por origem.
 - Ver canais de aviso e atualização em Configurações, com instruções de fornecedores e Netlify recolhidas na área técnica. WhatsApp e cadastro público ainda não estão disponíveis.
 - Explorar passagens com datas exatas ou descobrir ofertas com duração variável; apresenta a cobertura retornada, sem inventar preços.
 - Consultar itinerários com cidades de chegada e saída diferentes em datas definidas e validar a distância entre aeroportos conhecidos.

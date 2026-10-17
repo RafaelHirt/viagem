@@ -5,7 +5,7 @@ export { initialFlight, type FlightDraft } from '../shared/flight-draft';
 import { validateMonitor } from '../shared/domain';
 import { flightPeriodLabel, weekdayLabel, flightWindow, sampleTravelDates } from '../shared/flight-dates';
 import FlightPreferences from './FlightPreferences';
-import { findAirport, labelAirport, shortAirportLabel, REGIONS } from '../shared/airports';
+import { AIRPORTS, findAirport, isAirportInArea, labelAirport, matchesRegion, shortAirportLabel, REGIONS } from '../shared/airports';
 import { DEFAULT_TRIP, previewTrip } from '../shared/trip-planner';
 import { requiredCityCodes } from '../shared/trip-cities';
 import TripSummary from './TripSummary';
@@ -13,6 +13,7 @@ import AirportAutocomplete from './AirportAutocomplete';
 import AirportAlternatives from './AirportAlternatives';
 import { airportSetLabel } from '../shared/airport-options';
 import HotelAutocomplete from './HotelAutocomplete';
+import DestinationPicker from './DestinationPicker';
 import './query-wizard.css';
 const AreaMap = lazy(() => import('./AreaMap'));
 const TripPlanner = lazy(() => import('./TripPlanner'));
@@ -28,7 +29,9 @@ export default function QueryWizard({ mode, kind, onKindChange, flight, setFligh
 }) {
   const [step, setStep] = useState(0);
   const [error, setError] = useState('');
-  const [mapRegion, setMapRegion] = useState(REGIONS.some(region => region.label === flight.destination) ? flight.destination : 'Europa');
+  const [mapOpen, setMapOpen] = useState(Boolean(flight.area));
+  const selectedRegion = REGIONS.find(region => region.label === flight.destination || region.id === flight.destination);
+  const mapRegion = selectedRegion?.label || 'Europa';
   const title = useRef<HTMLHeadingElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const didMount = useRef(false);
@@ -44,7 +47,8 @@ export default function QueryWizard({ mode, kind, onKindChange, flight, setFligh
       if (kind === 'flight') {
         if (!findAirport(flight.origin)) message = 'Selecione seu aeroporto de partida na lista de cidades.';
         else if (flight.destinationMode === 'airport' && !findAirport(flight.arrivalAirport)) message = 'Selecione a cidade ou o aeroporto de chegada na lista.';
-        else if (flight.destinationMode === 'map' && !flight.area && !REGIONS.some(region => region.label === flight.destination)) message = 'Marque uma área no mapa para escolher os aeroportos permitidos.';
+        else if ((flight.destinationMode === 'region' || flight.destinationMode === 'map') && !flight.area && !selectedRegion) message = 'Escolha uma cidade ou região, como Recife, Nordeste ou Europa.';
+        else if (flight.area && selectedRegion && !AIRPORTS.some(airport => matchesRegion(airport, selectedRegion.id) && isAirportInArea(airport, flight.area!))) message = `A área marcada precisa incluir aeroportos de ${selectedRegion.label}. Ajuste a área ou remova o limite do mapa.`;
         else if (flight.destinationMode === 'trip' && (!flight.tripPlan || !requiredCityCodes(flight.tripPlan).length || previewTrip(flight.tripPlan).status !== 'ready')) message = !flight.tripPlan || !requiredCityCodes(flight.tripPlan).length ? 'Escolha pelo menos uma cidade obrigatória do roteiro.' : previewTrip(flight.tripPlan).message;
       } else if (!hotel.propertyId) message = 'Selecione um hotel encontrado na Booking. O nome digitado sozinho ainda não confirma a propriedade.';
     }
@@ -59,7 +63,7 @@ export default function QueryWizard({ mode, kind, onKindChange, flight, setFligh
   }
   function submit(event: FormEvent) { event.preventDefault(); if (hotelUnavailable) return; if (step < last) goNext(); else onSubmit(event); }
   function changeKind(value: 'flight' | 'hotel') { onKindChange(value); setStep(0); setError(''); }
-  const destination = flight.destinationMode === 'airport' ? labelAirport(flight.arrivalAirport) : flight.area ? flight.area.label || 'Área selecionada no mapa' : flight.destination;
+  const destination = flight.destinationMode === 'airport' ? labelAirport(flight.arrivalAirport) : selectedRegion ? `${selectedRegion.label}${flight.area ? ' · área limitada no mapa' : ''}` : flight.area ? flight.area.label || 'Área selecionada no mapa' : flight.destination;
   return <form className="query-wizard" onSubmit={submit} noValidate>
     <div className="search-panel-top wizard-kind-row"><div className="kind-switch" role="group" aria-label="Tipo de viagem">
       <button type="button" className={kind === 'flight' ? 'selected' : ''} aria-pressed={kind === 'flight'} onClick={() => changeKind('flight')}><Plane size={17} />Passagens aéreas</button>
@@ -72,15 +76,18 @@ export default function QueryWizard({ mode, kind, onKindChange, flight, setFligh
       <button type="button" disabled={index > step} aria-current={index === step ? 'step' : undefined} onClick={() => { setStep(index); setError(''); }}><span>{index < step ? <Check size={14} /> : index + 1}</span>{label}</button>
     </li>)}</ol>
     <div ref={content} className="wizard-content">
-      <h3 ref={title} tabIndex={-1} className="wizard-heading">{step === 0 ? (kind === 'flight' ? 'Para onde vamos?' : 'Encontre o hotel certo') : step === 1 ? 'Datas e viajantes' : step === last ? 'Confira sua busca' : 'Quando você quer receber um aviso?'}</h3>
+      <h3 ref={title} tabIndex={-1} className="wizard-heading">{step === 0 ? (kind === 'flight' ? 'Sua próxima viagem' : 'Encontre o hotel certo') : step === 1 ? 'Datas e viajantes' : step === last ? 'Confira sua busca' : 'Quando você quer receber um aviso?'}</h3>
       {step === 0 && (kind === 'flight' ? <>
         <AirportAutocomplete value={flight.origin} onChange={origin => setFlight({ ...flight, origin, originAirports: undefined })} label="De onde você sai?" /><AirportAlternatives primary={flight.origin} selected={flight.originAirports} label="Aeroportos de partida" onChange={codes => setFlight({ ...flight, origin: codes[0], originAirports: codes.length > 1 ? codes : undefined })} />
-        <div className="destination-options"><span className="field-label">Como prefere escolher o destino?</span><div className="destination-modes" role="group" aria-label="Escolha de destino">
-          {([['map', 'Escolher no mapa'], ['airport', 'Uma cidade'], ['trip', 'Vários países']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={flight.destinationMode === value} className={flight.destinationMode === value ? 'selected' : ''} onClick={() => { if (value === flight.destinationMode) return; const region = REGIONS.some(region => region.label === flight.destination) ? flight.destination : 'Europa'; if (value === 'map' || value === 'trip') setMapRegion(region); setFlight({ ...flight, destinationMode: value, destination: value === 'map' ? region : flight.destination, arrivalAirport: '', departureAirport: '', arrivalAirports: undefined, departureAirports: undefined, area: undefined, ...(value === 'trip' ? { tripPlan: flight.tripPlan ?? { ...DEFAULT_TRIP, areas: flight.area ? [flight.area] : [] }, destination: `Roteiro por ${flight.tripPlan?.countryCount ?? 3} países` } : {}) }); }}>{label}</button>)}
-        </div></div>
-        {(flight.destinationMode === 'map' || flight.destinationMode === 'region') && <div className="destination-region"><Field label="Região do mapa"><select value={mapRegion} onChange={event => { const region = event.target.value; setMapRegion(region); setFlight({ ...flight, destinationMode: 'map', destination: region, area: undefined, arrivalAirport: '', departureAirport: '' }); }}>{REGIONS.map(region => <option key={region.id} value={region.label}>{region.label}</option>)}</select></Field></div>}
-        {flight.destinationMode === 'airport' && <AirportAutocomplete label="Para qual cidade ou aeroporto?" value={flight.arrivalAirport} onChange={value => setFlight({ ...flight, arrivalAirport: value, arrivalAirports: undefined, departureAirport: '', departureAirports: undefined, destination: value ? labelAirport(value) : '' })} placeholder="Ex.: Paris, Lisboa ou Roma" />}{flight.destinationMode === 'airport' && <AirportAlternatives primary={flight.arrivalAirport} selected={flight.arrivalAirports} label="Aeroportos no destino" onChange={codes => setFlight({ ...flight, arrivalAirport: codes[0], arrivalAirports: codes.length > 1 ? codes : undefined })} />}
-        {flight.destinationMode === 'map' && <div className="wizard-map"><Suspense fallback={<div className="map-loading"><LoaderCircle className="spin" size={20} />Carregando mapa…</div>}><AreaMap value={flight.area} onChange={area => setFlight({ ...flight, area, destination: area ? area.label || 'Área no mapa' : mapRegion, arrivalAirport: '', departureAirport: '' })} region={mapRegion} /></Suspense></div>}
+        {flight.destinationMode !== 'trip' ? <>
+          <DestinationPicker value={flight.destinationMode === 'airport' ? flight.arrivalAirport : selectedRegion?.label || (flight.area ? 'Área personalizada no mapa' : flight.destination)}
+            onClear={() => { setMapOpen(false); setFlight({ ...flight, destinationMode:'region', destination:'', area:undefined, arrivalAirport:'', departureAirport:'', arrivalAirports:undefined, departureAirports:undefined }); setError(''); }}
+            onSelect={choice => { setMapOpen(false); setFlight({ ...flight, destinationMode:choice.kind, destination:choice.kind === 'region' ? choice.value : labelAirport(choice.value), arrivalAirport:choice.kind === 'airport' ? choice.value : '', departureAirport:'', arrivalAirports:undefined, departureAirports:undefined, area:undefined }); setError(''); }} />
+          {flight.destinationMode === 'airport' && <AirportAlternatives primary={flight.arrivalAirport} selected={flight.arrivalAirports} label="Aeroportos no destino" onChange={codes => setFlight({ ...flight, arrivalAirport:codes[0], arrivalAirports:codes.length>1 ? codes:undefined })} />}
+          {selectedRegion && <div className="destination-region-note" aria-live="polite"><strong>{selectedRegion.id === 'anywhere' ? 'O destino pode ser uma surpresa' : `Comparar destinos: ${selectedRegion.label}`}</strong><p>{selectedRegion.id === 'anywhere' ? 'Vamos procurar oportunidades em destinos diferentes, dentro das datas que você escolher.' : `Você não precisa escolher uma cidade agora. Vamos comparar passagens para cidades ${selectedRegion.id === 'brazil-northeast' ? 'do Nordeste' : ({ Europa:'da Europa', Brasil:'do Brasil', Norte:'do Norte', Sudeste:'do Sudeste', Sul:'do Sul', 'Centro-Oeste':'do Centro-Oeste', 'América do Sul':'da América do Sul', 'América do Norte':'da América do Norte', 'América Central e Caribe':'da América Central e do Caribe', Ásia:'da Ásia', África:'da África', Oceania:'da Oceania' } as Record<string,string>)[selectedRegion.label] || `da região ${selectedRegion.label}`}.`}</p><p>{flight.area ? 'A busca está limitada à área marcada no mapa.' : 'A região inteira está selecionada. Se quiser, você pode limitar a uma área menor abaixo.'}</p></div>}
+          {(selectedRegion || flight.area) && <details key={selectedRegion?.id || 'custom-area'} className="destination-map-optional" open={mapOpen} onToggle={event => setMapOpen(event.currentTarget.open)}><summary>Limitar a busca a uma área no mapa (opcional)</summary><p>Use se quiser ficar perto de uma cidade ou explorar apenas parte da região. Toque no mapa para marcar uma área; arraste a bolha para mover e a borda para ajustar o tamanho.</p>{flight.area && <button type="button" className="text-button" onClick={() => setFlight({ ...flight, area:undefined, destinationMode:'region', destination:selectedRegion?.label || '', arrivalAirport:'', departureAirport:'', arrivalAirports:undefined, departureAirports:undefined })}>Remover limite do mapa{selectedRegion ? ` e buscar em ${selectedRegion.label}` : ''}</button>}<div className="wizard-map"><Suspense fallback={<div className="map-loading"><LoaderCircle className="spin" size={20} />Carregando mapa…</div>}>{mapOpen && <AreaMap value={flight.area} onChange={area => setFlight({ ...flight, area, destinationMode:area ? 'map':'region', destination:selectedRegion?.label || (area ? 'Área no mapa':''), arrivalAirport:'', departureAirport:'', arrivalAirports:undefined, departureAirports:undefined })} region={mapRegion} />}</Suspense></div></details>}
+          <div className="destination-trip-entry"><div><strong>Quer conhecer vários países na mesma viagem?</strong><p>Escolha as cidades que não podem faltar e compare roteiros.</p></div><button type="button" className="button button-secondary" onClick={() => { setFlight({ ...flight, destinationMode:'trip', destination:`Roteiro por ${flight.tripPlan?.countryCount ?? 3} países`, tripPlan:flight.tripPlan ?? { ...DEFAULT_TRIP, areas:[] }, area:undefined, arrivalAirport:'', departureAirport:'', arrivalAirports:undefined, departureAirports:undefined }); setError(''); }}>Montar roteiro por vários países</button></div>
+        </> : <div className="destination-trip-active"><button type="button" className="text-button" onClick={() => { setFlight({ ...flight, destinationMode:'region', destination:'', area:undefined, arrivalAirport:'', departureAirport:'', arrivalAirports:undefined, departureAirports:undefined }); setError(''); }}><ArrowLeft size={15} />Escolher uma cidade ou região</button><p>Visite vários países na mesma viagem. Todas as cidades obrigatórias entram no roteiro.</p></div>}
         {flight.destinationMode === 'trip' && <Suspense fallback={<div className="map-loading"><LoaderCircle className="spin" size={20} />Carregando planejador…</div>}><TripPlanner value={flight.tripPlan ?? DEFAULT_TRIP} region={mapRegion} onChange={tripPlan => setFlight({ ...flight, tripPlan, arrivalAirport: tripPlan.startAirport || flight.arrivalAirport, area: undefined, destination: `Roteiro por ${tripPlan.countryCount} países` })} /></Suspense>}
       </> : <HotelAutocomplete value={hotel.property} selectedId={hotel.propertyId} onChange={(property, propertyId) => setHotel({ ...hotel, property, propertyId })} />)}
       {step === 1 && (kind === 'flight' ? <FlightPreferences value={flight} onChange={setFlight} /> : <>

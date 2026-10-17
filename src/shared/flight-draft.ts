@@ -9,14 +9,14 @@ export interface FlightDraft {
   weekdayMode: 'any' | 'friday-sunday' | 'custom'; departureWeekdays: number[]; returnWeekdays: number[]
   adults: string; allowOpenJaw: boolean; area?: GeoArea; tripPlan?: TripPlan
 }
-export const initialFlight: FlightDraft = { origin: '', destination: 'Europa', destinationMode: 'map', arrivalAirport: '', departureAirport: '', departureDate: '', returnDate: '', minDays: '10', maxDays: '20', horizonMonths: '12', maxAirportDistanceKm: '', dateMode: 'horizon', startMonth: '', endMonth: '', weekdayMode: 'any', departureWeekdays: [], returnWeekdays: [], adults: '1', allowOpenJaw: true }
+export const initialFlight: FlightDraft = { origin: '', destination: '', destinationMode: 'region', arrivalAirport: '', departureAirport: '', departureDate: '', returnDate: '', minDays: '10', maxDays: '20', horizonMonths: '12', maxAirportDistanceKm: '', dateMode: 'horizon', startMonth: '', endMonth: '', weekdayMode: 'any', departureWeekdays: [], returnWeekdays: [], adults: '1', allowOpenJaw: true }
 export function flightDraftFromQuery(query: FlightQuery): FlightDraft {
   const fridaySunday = query.minDays === 2 && query.maxDays === 2 && query.departureWeekdays?.length === 1 && query.departureWeekdays[0] === 5 && query.returnWeekdays?.length === 1 && query.returnWeekdays[0] === 0
   const region = REGIONS.some(region => region.label === query.destination || region.id === query.destination)
   return { ...initialFlight, ...query, ...(query.tripPlan?.startAirport ? { tripPlan: { ...query.tripPlan, requiredAirport: query.tripPlan.requiredAirport || query.tripPlan.startAirport, startAirport: undefined } } : {}), minDays: String(query.minDays), maxDays: String(query.maxDays), horizonMonths: String(query.horizonMonths), adults: String(query.adults),
     arrivalAirport: query.arrivalAirport || query.tripPlan?.startAirport || '', departureAirport: query.departureAirport || '',
     departureDate: query.departureDate || '', returnDate: query.returnDate || '', maxAirportDistanceKm: query.maxAirportDistanceKm ? String(query.maxAirportDistanceKm) : '',
-    destinationMode: query.tripPlan ? 'trip' : query.area || region ? 'map' : query.arrivalAirport ? 'airport' : 'map',
+    destinationMode: query.tripPlan ? 'trip' : query.area ? 'map' : region ? 'region' : query.arrivalAirport ? 'airport' : 'region',
     dateMode: query.departureDate ? 'exact' : query.startMonth ? 'months' : 'horizon', startMonth: query.startMonth || '', endMonth: query.endMonth || '',
     weekdayMode: fridaySunday ? 'friday-sunday' : query.departureWeekdays?.length || query.returnWeekdays?.length ? 'custom' : 'any',
     departureWeekdays: query.departureWeekdays ? [...query.departureWeekdays] : [], returnWeekdays: query.returnWeekdays ? [...query.returnWeekdays] : [],

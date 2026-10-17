@@ -2,10 +2,10 @@ import { useMemo, useState } from 'react'
 import { Plus, Route, Trash2, X } from 'lucide-react'
 import { AIRPORTS, findAirport, REGIONS } from '../shared/airports'
 import type { TripPlan } from '../shared/types'
-import { countriesInAreas, previewTrip, TRAVEL_MODES, withRequiredCities } from '../shared/trip-planner'
+import { countriesInAreas, formatLeg, previewTrip, TRAVEL_MODES, withRequiredCities } from '../shared/trip-planner'
 import { requiredCityCodes, tripCityCode, tripCityCountry, tripCityName } from '../shared/trip-cities'
 import AreaMap from './AreaMap'
-import { railCity, railConnections, railTripOptions } from '../shared/rail-network'
+import { railConnectionGroups, railTripOptions } from '../shared/rail-network'
 import AirportAutocomplete from './AirportAutocomplete'
 import TripSummary from './TripSummary'
 import './trip-planner.css'
@@ -15,12 +15,12 @@ export default function TripPlanner({ value, onChange, region = 'Europa' }: { va
   const [cameraRegion, setCameraRegion] = useState(region)
   const [option, setOption] = useState(0)
   const [cityError, setCityError] = useState('')
+  const [showConnections, setShowConnections] = useState(false)
   const options = useMemo(() => value.transport === 'train' ? railTripOptions(value) : [], [value])
   const preview = useMemo(() => options.length ? options[Math.min(option, options.length - 1)] : previewTrip(value), [value, options, option])
-  const connections = useMemo(() => value.transport === 'train' ? railConnections(value) : undefined, [value])
+  const connectionGroups = useMemo(() => value.transport === 'train' ? railConnectionGroups(value) : undefined, [value])
   const requiredCodes = requiredCityCodes(value)
   const requiredCode = requiredCodes[0]
-  const requiredCity = railCity(requiredCode)
   const requiredCountries = new Set([...value.countryCodes, ...requiredCodes.flatMap(code => tripCityCountry(code) || [])])
   const freeCountries = Math.max(0, value.countryCount - requiredCountries.size)
   const countries = useMemo(() => countriesInAreas(value.areas), [value.areas])
@@ -52,9 +52,10 @@ export default function TripPlanner({ value, onChange, region = 'Europa' }: { va
     {!requiredCode && <button type="button" className="text-button" onClick={useExample}>Ver exemplo de 3 países</button>}
     {requiredCode && <>
       <div className="trip-start-note" aria-live="polite"><p><strong>{requiredCodes.map(tripCityName).join(' + ')}</strong>: presença obrigatória, em qualquer posição do roteiro.</p><p>{requiredCountries.size > value.countryCount ? 'As escolhas ultrapassam o total de países. Aumente a quantidade ou remova uma cidade ou país.' : freeCountries ? `${requiredCountries.size} ${requiredCountries.size === 1 ? 'país definido' : 'países definidos'} · ${freeCountries} ${freeCountries === 1 ? 'país livre para comparar' : 'países livres para comparar'}. Duas cidades no mesmo país contam como um país.` : 'Todos os países estão definidos. A entrada, a saída e a ordem ainda podem variar.'}</p></div>
-      {connections && <div className="rail-connections" aria-live="polite"><strong>Conexões com {requiredCity?.city || 'a cidade'} · até {value.maxLegHours}h por trecho</strong><p>{connections.length ? connections.map(city => city.city).join(' · ') : 'Nenhuma conexão de referência cabe neste tempo e nesta área.'}</p></div>}
-      {options.length > 1 && <div className="trip-route-options" role="group" aria-label="Possibilidades de roteiro">{options.map((route,index) => <button type="button" key={route.stops.map(stop=>stop.airportCode).join('-')} aria-pressed={Math.min(option,options.length-1)===index} onClick={()=>setOption(index)}><strong>Possibilidade {index+1}</strong><span>{route.stops.map(stop=>stop.city).join(' → ')}</span><small>Ver no mapa · deslocamentos à parte</small></button>)}</div>}
-      <AreaMap heading={selectedIndex ? `Área extra ${selectedIndex}` : "Área para explorar"} value={value.areas[selectedIndex]} otherAreas={otherAreas} areaNumber={selectedIndex + 1} onSelectArea={setActive} tripPreview={preview} region={cameraRegion} focusAirport={requiredCode} connectionStops={connections} connectionAnchor={requiredCity} onChange={area => {
+      <section className="trip-route-overview" aria-label="Roteiro com todas as cidades obrigatórias" aria-live="polite"><h4>{preview.status === 'ready' ? 'Um roteiro que inclui suas cidades' : 'Ainda não encontramos um roteiro para estas escolhas'}</h4>{preview.status === 'ready' ? <><p className="trip-route-chain">{preview.stops.map(stop => stop.city).join(' → ')}</p><p>{requiredCodes.length === 1 ? 'Sua cidade obrigatória está incluída.' : `Todas as ${requiredCodes.length} cidades obrigatórias estão incluídas.`} Cada trecho respeita o limite de {value.maxLegHours}h.</p><small>As paradas intermediárias ajudam a respeitar o tempo por trecho. Tempos de referência, sem horários ou bilhetes consultados.</small></> : <p>{preview.message}</p>}</section>
+      {options.length > 1 && <div className="trip-route-options" role="group" aria-label="Possibilidades de roteiro">{options.map((route,index) => <button type="button" key={route.stops.map(stop=>stop.airportCode).join('-')} aria-pressed={Math.min(option,options.length-1)===index} onClick={()=>setOption(index)}><strong>Possibilidade {index+1}</strong><span>{route.stops.map(stop=>stop.city).join(' → ')}</span><small>Inclui todas as suas cidades · ver no mapa</small></button>)}</div>}
+      {connectionGroups && <details className="rail-connections"><summary>Ver ligações de trem de {connectionGroups.map(group => group.origin.city).join(' e ')}</summary><p>Estas são ligações individuais de referência, não um roteiro completo. O roteiro acima combina os trechos para incluir todas as suas cidades.</p><div className="rail-connection-groups" aria-live="polite">{connectionGroups.map(group => <section className="rail-connection-group" key={group.origin.airportCode} aria-label={`Ligações saindo de ${group.origin.city}`}><h5>Saindo de {group.origin.city}</h5>{group.connections.length ? <ul>{group.connections.map(({ destination, leg }) => <li key={destination.airportCode}><span>{destination.city}</span><span>{formatLeg(leg)}</span></li>)}</ul> : <p>Nenhuma ligação cadastrada nesta área cabe no limite de {value.maxLegHours}h. Isso não significa que não exista trem.</p>}</section>)}</div><label className="rail-show-connections"><input type="checkbox" checked={showConnections} onChange={event => setShowConnections(event.target.checked)} /><span>Mostrar estas ligações extras no mapa</span></label><small>O limite de {value.maxLegHours}h vale para o maior tempo de cada faixa. Confira os horários no operador.</small></details>}
+      <AreaMap heading={selectedIndex ? `Área extra ${selectedIndex}` : "Seu roteiro no mapa"} value={value.areas[selectedIndex]} otherAreas={otherAreas} areaNumber={selectedIndex + 1} onSelectArea={setActive} tripPreview={preview} region={cameraRegion} focusAirport={requiredCode} requiredStops={connectionGroups?.map(group => group.origin)} connectionGroups={showConnections ? connectionGroups : undefined} onChange={area => {
         if (!area) return
         const areas = [...value.areas]; areas[selectedIndex] = area; update({ areas })
       }} />
@@ -73,7 +74,7 @@ export default function TripPlanner({ value, onChange, region = 'Europa' }: { va
       {value.countryCodes.filter(code => !countries.some(country => country.code === code)).map(code => <button className="trip-missing-country" type="button" key={code} onClick={() => update({ countryCodes: value.countryCodes.filter(item => item !== code), flexibleOrder: true })}>{AIRPORTS.find(airport => airport.countryCode === code)?.country || code} ficou fora das áreas · remover</button>)}
       <label className="trip-free-order"><input type="checkbox" checked={value.flexibleOrder} disabled={value.countryCodes.length !== value.countryCount} onChange={event => update({ flexibleOrder: event.target.checked })} /><span>Deixar a ordem dos países livre<small>{value.countryCodes.length === value.countryCount ? 'Desmarque para seguir a ordem de seleção.' : 'Selecione todos os países para fixar a ordem.'}</small></span></label>
     </details>
-    {requiredCode && <TripSummary preview={preview} transport={value.transport} />}
+    {requiredCode && <details className="trip-leg-details"><summary>Ver cada trecho e seu tempo</summary><TripSummary preview={preview} transport={value.transport} /></details>}
     <details className="trip-model-explanation"><summary>Como o roteiro é calculado?</summary><p>Todas as cidades obrigatórias precisam aparecer, em qualquer posição. Para trem na Europa, usamos uma rede de conexões de referência e aplicamos o limite ao maior tempo de cada faixa. Aumentar o raio muda a área; mudar as horas muda as conexões. Horários, obras, disponibilidade e preços para as datas escolhidas ainda precisam ser conferidos nos operadores.</p></details>
     <p className="trip-fare-note">Comparamos as passagens aéreas consultadas para roteiros que incluam todas as cidades obrigatórias. A busca é uma amostra, sem garantia do menor preço. Trens e hotéis ficam fora desse valor.</p>
   </section>
