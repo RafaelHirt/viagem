@@ -118,6 +118,29 @@ describe('real price provider adapter', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('classifies regions from the worldwide catalog instead of treating every non-Brazil airport as Europe', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-17T13:00:00Z'));
+    const deal = { price: 2500, name: 'Paris', departure_airport_code: 'GRU', arrival_airport_code: 'CDG', start_date: '2026-11-10', end_date: '2026-11-21' };
+    vi.mocked(fetch).mockResolvedValue(response({ deals: [deal, { ...deal, name: 'Los Angeles', arrival_airport_code: 'LAX' }, { ...deal, name: 'Goiânia', arrival_airport_code: 'GYN' }] }));
+    const result = await explore('flight', { ...query, arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined });
+    expect(result.offers.map((offer) => offer.arrivalAirport)).toEqual(['CDG']);
+  });
+
+  it('uses the drawn circle as the destination and excludes airports outside it', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-17T13:00:00Z'));
+    const deal = { price: 2500, name: 'Paris', departure_airport_code: 'GRU', arrival_airport_code: 'CDG', start_date: '2026-11-10', end_date: '2026-11-21' };
+    vi.mocked(fetch).mockResolvedValue(response({ deals: [deal, { ...deal, name: 'Amsterdam', arrival_airport_code: 'AMS' }] }));
+    const result = await explore('flight', { ...query, destination: 'Área no mapa', area: { lat: 48.85, lon: 2.35, radiusKm: 100 }, arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined });
+    expect(result.offers.map((offer) => offer.arrivalAirport)).toEqual(['CDG']);
+  });
+
+  it('requires both open-jaw airports inside the drawn area before consuming a query', async () => {
+    await expect(explore('flight', { ...query, departureAirport: 'AMS', area: { lat: 48.85, lon: 2.35, radiusKm: 100 } })).rejects.toMatchObject({ code: 'AIRPORT_OUTSIDE_AREA' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('does not expose an authenticated API URL as a purchase link', async () => {
     vi.mocked(fetch).mockResolvedValue(response({ ...fixedData, search_metadata: { google_flights_url: 'https://serpapi.com/search.json?api_key=private-test-key' } }));
     const result = await explore('flight', query);

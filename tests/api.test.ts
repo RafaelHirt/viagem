@@ -148,6 +148,19 @@ describe('personal dashboard API', () => {
     const cookie = await login(handler);
     expect((await handler(request('/api/monitors', 'POST', { name: 'x'.repeat(20_001) }, cookie))).status).toBe(413);
   });
+
+  it('protects hotel lookup and returns only the connected catalog suggestions', async () => {
+    const { storage } = await storageFixture();
+    const hotelSuggestions = vi.fn(async () => ({ hotels: [], configured: false, message: 'Catálogo Booking ainda não conectado.' }));
+    const handler = createApiHandler({ storage, password: 'senha-segura-do-painel', hotelSuggestions });
+    expect((await handler(request('/api/suggestions/hotels?q=Boa%20Vista'))).status).toBe(401);
+    expect(hotelSuggestions).not.toHaveBeenCalled();
+    const cookie = await login(handler);
+    const result = await handler(request('/api/suggestions/hotels?q=Boa%20Vista', 'GET', undefined, cookie));
+    expect(result.status).toBe(200);
+    expect(await result.json()).toMatchObject({ hotels: [], configured: false });
+    expect(hotelSuggestions).toHaveBeenCalledWith('Boa Vista', undefined);
+  });
 });
 
 describe('notification acceptance and stable deduplication', () => {

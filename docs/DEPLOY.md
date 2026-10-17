@@ -27,6 +27,7 @@ Preencha valores apenas nas variáveis de ambiente do Netlify, disponíveis às 
 | `DASHBOARD_PASSWORD` | Senha privada de acesso, pelo menos 12 caracteres no deploy. Obrigatória para operações privadas. |
 | `SERPAPI_API_KEY` | Consultar passagens reais. Conta e chave devem ser criadas e fornecidas pelo usuário. |
 | `BOOKING_API_TOKEN`, `BOOKING_AFFILIATE_ID` | Nomes reservados para incorporar a conexão Booking já definida. O adaptador de hotéis está pendente neste checkout; preencher esses valores sozinho não o implementa. |
+| `BOOKING_HOTEL_CATALOG_PATH` | Desenvolvimento: caminho de um catálogo privado importado legitimamente da Booking. No Netlify, a pesquisa pode ler o store privado `viagem-booking-catalog`, chave `index.json`. Sem índice, a lista permanece indisponível. Ver [hotéis](HOTEIS.md). |
 | `ENABLE_SCHEDULED_COLLECTION` | `true` para habilitar a coleta programada depois da validação; ausente ou `false` a mantém desligada. |
 | `RESEND_API_KEY`, `ALERT_FROM_EMAIL` | Transporte de e-mail, com remetente autorizado. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Bot e chat de destino do Telegram. |
@@ -49,7 +50,7 @@ Nesta versão, candidatos SerpApi são mantidos como **não confirmados**, e a e
 2. Configurar a chave SerpApi no servidor e pesquisar a origem real do usuário.
 3. Conferir BRL, passageiros, bagagem, condições e preço na página do vendedor.
 4. Completar a seleção do retorno e as opções de compra antes de habilitar alertas de preço confirmado.
-5. Verificar a integração de hotel já existente no ambiente em que ela está configurada e incorporá-la aqui sem copiar segredos para o repositório.
+5. Obter acesso elegível à Booking Demand, importar o catálogo autorizado e implementar/validar o conector de preços. Booking foi escolhido como fonte; ainda não existe uma integração real neste projeto.
 6. Configurar canais e verificar destinatários; então validar um envio autorizado de teste.
 
 Nenhum pagamento, reserva, contratação ou envio real foi realizado na preparação deste repositório.

@@ -1,69 +1,18 @@
-import type { FlightQuery, HotelQuery, Monitor, Observation } from './types.ts'
+import type { FlightQuery, GeoArea, HotelQuery, Monitor, Observation } from './types.ts'
+import { findAirport } from './airports.ts'
+export { AIRPORTS, findAirport } from './airports.ts'
+export type { Airport } from './airports.ts'
 
 export interface Coordinates {
   lat: number
   lon: number
 }
 
-export interface Airport extends Coordinates {
-  code: string
-  name: string
-  country: string
-}
-
-/** A starter set for the region explorer, not a complete airport database. */
-export const AIRPORTS: readonly Airport[] = [
-  { code: 'GRU', name: 'São Paulo · Guarulhos', country: 'Brasil', lat: -23.4356, lon: -46.4731 },
-  { code: 'VCP', name: 'Campinas · Viracopos', country: 'Brasil', lat: -23.0074, lon: -47.1345 },
-  { code: 'CGH', name: 'São Paulo · Congonhas', country: 'Brasil', lat: -23.6261, lon: -46.6564 },
-  { code: 'GIG', name: 'Rio de Janeiro · Galeão', country: 'Brasil', lat: -22.81, lon: -43.2506 },
-  { code: 'SDU', name: 'Rio de Janeiro · Santos Dumont', country: 'Brasil', lat: -22.9105, lon: -43.1631 },
-  { code: 'BSB', name: 'Brasília', country: 'Brasil', lat: -15.8692, lon: -47.9208 },
-  { code: 'CNF', name: 'Belo Horizonte · Confins', country: 'Brasil', lat: -19.6244, lon: -43.9719 },
-  { code: 'POA', name: 'Porto Alegre', country: 'Brasil', lat: -29.9944, lon: -51.1714 },
-  { code: 'CWB', name: 'Curitiba', country: 'Brasil', lat: -25.5285, lon: -49.1758 },
-  { code: 'FLN', name: 'Florianópolis', country: 'Brasil', lat: -27.6703, lon: -48.5525 },
-  { code: 'REC', name: 'Recife', country: 'Brasil', lat: -8.1265, lon: -34.9236 },
-  { code: 'FOR', name: 'Fortaleza', country: 'Brasil', lat: -3.7763, lon: -38.5326 },
-  { code: 'SSA', name: 'Salvador', country: 'Brasil', lat: -12.9086, lon: -38.3225 },
-  { code: 'LIS', name: 'Lisboa', country: 'Portugal', lat: 38.7742, lon: -9.1342 },
-  { code: 'OPO', name: 'Porto', country: 'Portugal', lat: 41.2481, lon: -8.6814 },
-  { code: 'MAD', name: 'Madri · Barajas', country: 'Espanha', lat: 40.4983, lon: -3.5676 },
-  { code: 'BCN', name: 'Barcelona', country: 'Espanha', lat: 41.2974, lon: 2.0833 },
-  { code: 'CDG', name: 'Paris · Charles de Gaulle', country: 'França', lat: 49.0097, lon: 2.5479 },
-  { code: 'ORY', name: 'Paris · Orly', country: 'França', lat: 48.7262, lon: 2.3652 },
-  { code: 'FCO', name: 'Roma · Fiumicino', country: 'Itália', lat: 41.8003, lon: 12.2389 },
-  { code: 'MXP', name: 'Milão · Malpensa', country: 'Itália', lat: 45.6306, lon: 8.7281 },
-  { code: 'VCE', name: 'Veneza', country: 'Itália', lat: 45.5053, lon: 12.3519 },
-  { code: 'LHR', name: 'Londres · Heathrow', country: 'Reino Unido', lat: 51.47, lon: -0.4543 },
-  { code: 'LGW', name: 'Londres · Gatwick', country: 'Reino Unido', lat: 51.1537, lon: -0.1821 },
-  { code: 'AMS', name: 'Amsterdã', country: 'Países Baixos', lat: 52.3105, lon: 4.7683 },
-  { code: 'BRU', name: 'Bruxelas', country: 'Bélgica', lat: 50.901, lon: 4.4844 },
-  { code: 'FRA', name: 'Frankfurt', country: 'Alemanha', lat: 50.0379, lon: 8.5622 },
-  { code: 'MUC', name: 'Munique', country: 'Alemanha', lat: 48.3538, lon: 11.7861 },
-  { code: 'BER', name: 'Berlim', country: 'Alemanha', lat: 52.3667, lon: 13.5033 },
-  { code: 'ZRH', name: 'Zurique', country: 'Suíça', lat: 47.4581, lon: 8.5555 },
-  { code: 'GVA', name: 'Genebra', country: 'Suíça', lat: 46.2381, lon: 6.1089 },
-  { code: 'VIE', name: 'Viena', country: 'Áustria', lat: 48.1103, lon: 16.5697 },
-  { code: 'PRG', name: 'Praga', country: 'Tchéquia', lat: 50.1008, lon: 14.26 },
-  { code: 'BUD', name: 'Budapeste', country: 'Hungria', lat: 47.4298, lon: 19.2611 },
-  { code: 'WAW', name: 'Varsóvia', country: 'Polônia', lat: 52.1657, lon: 20.9671 },
-  { code: 'DUB', name: 'Dublin', country: 'Irlanda', lat: 53.4213, lon: -6.2701 },
-  { code: 'CPH', name: 'Copenhague', country: 'Dinamarca', lat: 55.618, lon: 12.6508 },
-  { code: 'ARN', name: 'Estocolmo · Arlanda', country: 'Suécia', lat: 59.6519, lon: 17.9186 },
-  { code: 'OSL', name: 'Oslo', country: 'Noruega', lat: 60.1939, lon: 11.1004 },
-  { code: 'ATH', name: 'Atenas', country: 'Grécia', lat: 37.9364, lon: 23.9445 },
-]
-
 export function parseIata(value: unknown): string {
   if (typeof value !== 'string' || !/^[A-Z]{3}$/.test(value.trim().toUpperCase())) {
     throw new Error('Informe o código IATA do aeroporto com três letras, como GRU.')
   }
   return value.trim().toUpperCase()
-}
-
-export function findAirport(code: string): Airport | undefined {
-  return AIRPORTS.find((airport) => airport.code === code.trim().toUpperCase())
 }
 
 /** Straight-line distance, not travel time or the cost of ground transport. */
@@ -184,6 +133,19 @@ function optionalIata(value: unknown): string | undefined {
   return value === undefined || value === '' ? undefined : parseIata(value)
 }
 
+function optionalArea(value: unknown): GeoArea | undefined {
+  if (value === undefined) return undefined
+  const area = object(value, 'Escolha uma área válida no mapa.')
+  if (typeof area.lat !== 'number' || !Number.isFinite(area.lat) || Math.abs(area.lat) > 90 ||
+    typeof area.lon !== 'number' || !Number.isFinite(area.lon) || Math.abs(area.lon) > 180 ||
+    typeof area.radiusKm !== 'number' || !Number.isFinite(area.radiusKm) ||
+    area.radiusKm <= 0 || area.radiusKm > 20_050) {
+    throw new Error('A área do mapa deve ter coordenadas válidas e raio maior que zero e até 20.050 km.')
+  }
+  return { lat: area.lat, lon: area.lon, radiusKm: area.radiusKm,
+    ...(area.label === undefined ? {} : { label: text(area.label, 'um nome para a área', 120) }) }
+}
+
 function flightQuery(value: unknown): FlightQuery {
   const query = object(value, 'Informe os critérios da viagem.')
   const minDays = integer(query.minDays, 'A duração mínima', 1, 365)
@@ -222,6 +184,7 @@ function flightQuery(value: unknown): FlightQuery {
     maxAirportDistanceKm,
     adults: integer(query.adults, 'A quantidade de adultos', 1, 9),
     allowOpenJaw,
+    area: optionalArea(query.area),
   }
 }
 
@@ -237,9 +200,13 @@ function hotelQuery(value: unknown): HotelQuery {
     property: text(query.property, 'o hotel'),
     propertyId: query.propertyId === undefined || query.propertyId === ''
       ? undefined : text(query.propertyId, 'o identificador do hotel', 200),
+    propertyVerified: query.propertyVerified === undefined ? undefined
+      : boolean(query.propertyVerified, 'se o hotel foi encontrado no Booking'),
     checkIn, checkOut,
     pattern: query.pattern,
     adults: integer(query.adults, 'A quantidade de adultos', 1, 30),
+    horizonMonths: query.horizonMonths === undefined ? undefined
+      : integer(query.horizonMonths, 'O horizonte da pesquisa', 1, 12),
   }
 }
 

@@ -1,0 +1,298 @@
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
+import { geoCircle, geoDistance, geoGraticule10, geoMercator, geoPath } from 'd3-geo'
+import { feature } from 'topojson-client'
+import type { GeometryCollection, Topology } from 'topojson-specification'
+import world from 'world-atlas/countries-110m.json'
+import { LocateFixed, Minus, Move, Plus, RotateCcw } from 'lucide-react'
+import type { GeoArea } from '../shared/types'
+import { AIRPORTS, REGIONS, findAirport, isAirportInArea } from '../shared/airports'
+import './area-map.css'
+
+interface AreaMapProps {
+  value?: GeoArea
+  onChange: (area: GeoArea | undefined) => void
+  region?: string
+  focusAirport?: string
+}
+
+const WIDTH = 900
+const HEIGHT = 430
+const EARTH_RADIUS_KM = 6371
+const MIN_RADIUS = 100
+const MAX_RADIUS = 5000
+const REFERENCE_AIRPORTS = ['CDG', 'LHR', 'LIS', 'MAD', 'FCO', 'AMS', 'BER', 'VIE', 'ATH', 'WAW', 'OSL', 'ARN', 'HEL', 'IST', 'GRU', 'GIG', 'BSB', 'GYN', 'REC', 'SSA', 'MAO', 'EZE', 'SCL', 'LIM', 'BOG', 'MEX', 'JFK', 'LAX', 'YYZ', 'DXB', 'CAI', 'JNB', 'NRT', 'ICN', 'SIN', 'BKK', 'DEL', 'SYD', 'AKL']
+const CITY_LABELS: Record<string, string> = { CDG: 'Paris', LHR: 'Londres', LIS: 'Lisboa', MAD: 'Madri', FCO: 'Roma', BER: 'Berlim', VIE: 'Viena', ATH: 'Atenas', WAW: 'Varsóvia', ARN: 'Estocolmo', HEL: 'Helsinque', IST: 'Istambul', GRU: 'São Paulo', GIG: 'Rio de Janeiro', BSB: 'Brasília', GYN: 'Goiânia', EZE: 'Buenos Aires', MEX: 'Cidade do México', JFK: 'Nova York', CAI: 'Cairo', NRT: 'Tóquio', ICN: 'Seul', SIN: 'Singapura', DEL: 'Nova Délhi' }
+const countries = feature(
+  world as unknown as Topology,
+  world.objects.countries as unknown as GeometryCollection,
+).features
+const graticule = geoGraticule10()
+
+interface Camera { lat: number; lon: number; scale: number }
+interface Gesture {
+  mode: 'pan' | 'resize'
+  startX: number
+  startY: number
+  camera: Camera
+  moved: boolean
+}
+
+function regionCamera(region?: string, focusAirport?: string, area?: GeoArea): Camera {
+  const airport = focusAirport ? findAirport(focusAirport) : undefined
+  const selectedRegion = REGIONS.find((item) => item.id === region || item.label === region)
+  const center = airport ?? area ?? selectedRegion?.center ?? { lat: 48, lon: 10 }
+  // The catalog stores a zoom multiplier, while d3 expects pixels per radian.
+  return { lat: center.lat, lon: center.lon, scale: selectedRegion ? selectedRegion.scale * 180 : 710 }
+}
+
+function projectionFor(camera: Camera) {
+  return geoMercator()
+    .rotate([-camera.lon, 0])
+    .center([0, camera.lat])
+    .translate([WIDTH / 2, HEIGHT / 2])
+    .scale(camera.scale)
+    .clipExtent([[0, 0], [WIDTH, HEIGHT]])
+}
+
+function eastEdge(area: GeoArea): [number, number] {
+  const lat = area.lat * Math.PI / 180
+  const distance = area.radiusKm / EARTH_RADIUS_KM
+  const edgeLat = Math.asin(Math.sin(lat) * Math.cos(distance))
+  const edgeLon = area.lon * Math.PI / 180 + Math.atan2(
+    Math.sin(distance) * Math.cos(lat),
+    Math.cos(distance) - Math.sin(lat) * Math.sin(edgeLat),
+  )
+  return [edgeLon * 180 / Math.PI, edgeLat * 180 / Math.PI]
+}
+
+function clampRadius(radius: number) {
+  return Math.min(MAX_RADIUS, Math.max(MIN_RADIUS, Math.round(radius / 25) * 25))
+}
+
+export default function AreaMap({ value, onChange, region, focusAirport }: AreaMapProps) {
+  const [camera, setCamera] = useState<Camera>(() => regionCamera(region, focusAirport, value))
+  const [dragging, setDragging] = useState(false)
+  const svgRef = useRef<SVGSVGElement>(null)
+  const gesture = useRef<Gesture | null>(null)
+  const previousLocation = useRef({ region, focusAirport })
+  const labelId = useId()
+  const helpId = useId()
+  const sliderId = useId()
+  const clipId = useId().replace(/:/g, '')
+
+  useEffect(() => {
+    if (previousLocation.current.region === region && previousLocation.current.focusAirport === focusAirport) return
+    previousLocation.current = { region, focusAirport }
+    setCamera(regionCamera(region, focusAirport))
+  }, [region, focusAirport])
+
+  const projection = useMemo(() => projectionFor(camera), [camera])
+  const path = useMemo(() => geoPath(projection), [projection])
+  const areaPath = value
+    ? path(geoCircle().center([value.lon, value.lat]).radius(value.radiusKm / EARTH_RADIUS_KM * 180 / Math.PI)())
+    : null
+  const areaCenter = value ? projection([value.lon, value.lat]) : null
+  const areaEdge = value ? projection(eastEdge(value)) : null
+
+  const includedAirports = useMemo(
+    () => value ? AIRPORTS.filter((airport) => isAirportInArea(airport, value)) : [],
+    [value],
+  )
+  const nearbyCities = useMemo(() => {
+    if (!value) return []
+    const sorted = [...includedAirports].sort((a, b) =>
+      geoDistance([value.lon, value.lat], [a.lon, a.lat]) - geoDistance([value.lon, value.lat], [b.lon, b.lat]),
+    )
+    return [...new Set(sorted.map((airport) => airport.city))].slice(0, 3)
+  }, [includedAirports, value])
+
+  const markers = useMemo(() => {
+    const points = AIRPORTS.flatMap((airport) => {
+      const point = projection([airport.lon, airport.lat])
+      if (!point || point[0] < 10 || point[0] > WIDTH - 10 || point[1] < 10 || point[1] > HEIGHT - 10) return []
+      return [{ airport, point, inside: !!value && isAirportInArea(airport, value) }]
+    })
+    // Keep the map legible when the world is in view. The area count still uses the complete catalog.
+    const occupied = new Set<string>()
+    return points.filter(({ point }) => {
+      const cell = `${Math.round(point[0] / 21)}:${Math.round(point[1] / 21)}`
+      if (occupied.has(cell)) return false
+      occupied.add(cell)
+      return true
+    }).slice(0, 150)
+  }, [projection, value])
+
+  const cityLabels = useMemo(() => {
+    const airports = [...REFERENCE_AIRPORTS.flatMap(code => findAirport(code) ?? []), ...includedAirports]
+    const labels: { code: string; city: string; point: [number, number] }[] = []
+    const cities = new Set<string>()
+    for (const airport of airports) {
+      const point = projection([airport.lon, airport.lat])
+      if (!point || point[0] < 15 || point[0] > WIDTH - 90 || point[1] < 22 || point[1] > HEIGHT - 15 || cities.has(airport.city)) continue
+      if (labels.some(label => Math.abs(label.point[0] - point[0]) < 110 && Math.abs(label.point[1] - point[1]) < 27)) continue
+      cities.add(airport.city)
+      labels.push({ code: airport.code, city: CITY_LABELS[airport.code] || (airport.city.length > 22 ? `${airport.city.slice(0, 20)}…` : airport.city), point })
+      if (labels.length === 16) break
+    }
+    return labels
+  }, [projection, includedAirports])
+
+  function localPoint(event: ReactPointerEvent<SVGSVGElement>): [number, number] | null {
+    const svg = svgRef.current
+    const matrix = svg?.getScreenCTM()
+    if (!svg || !matrix) return null
+    const point = svg.createSVGPoint()
+    point.x = event.clientX
+    point.y = event.clientY
+    const transformed = point.matrixTransform(matrix.inverse())
+    return [transformed.x, transformed.y]
+  }
+
+  function selectPoint(point: [number, number]) {
+    const coords = projection.invert?.(point)
+    if (!coords || !Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) return
+    onChange({
+      lat: Math.max(-80, Math.min(80, coords[1])),
+      lon: ((coords[0] + 540) % 360) - 180,
+      radiusKm: value?.radiusKm ?? 500,
+    })
+  }
+
+  function onPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
+    if (event.button !== 0) return
+    const point = localPoint(event)
+    if (!point) return
+    const target = event.target as Element
+    gesture.current = {
+      mode: target.closest('[data-area-resize]') ? 'resize' : 'pan',
+      startX: point[0], startY: point[1], camera, moved: false,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function onPointerMove(event: ReactPointerEvent<SVGSVGElement>) {
+    const current = gesture.current
+    const point = localPoint(event)
+    if (!current || !point) return
+    const dx = point[0] - current.startX
+    const dy = point[1] - current.startY
+    if (Math.hypot(dx, dy) > 5) current.moved = true
+    if (!current.moved && current.mode !== 'resize') return
+    setDragging(true)
+    if (current.mode === 'resize' && value) {
+      const coords = projection.invert?.(point)
+      if (coords) onChange({ ...value, radiusKm: clampRadius(geoDistance([value.lon, value.lat], coords) * EARTH_RADIUS_KM) })
+      return
+    }
+    const originalProjection = projectionFor(current.camera)
+    const coords = originalProjection.invert?.([WIDTH / 2 - dx, HEIGHT / 2 - dy])
+    if (coords) setCamera({ ...current.camera, lon: ((coords[0] + 540) % 360) - 180, lat: Math.max(-76, Math.min(76, coords[1])) })
+  }
+
+  function onPointerUp(event: ReactPointerEvent<SVGSVGElement>) {
+    const current = gesture.current
+    const point = localPoint(event)
+    if (current && !current.moved && current.mode === 'pan' && point) selectPoint(point)
+    gesture.current = null
+    setDragging(false)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
+  function zoom(factor: number) {
+    setCamera((current) => ({ ...current, scale: Math.max(125, Math.min(4500, current.scale * factor)) }))
+  }
+
+  return (
+    <section className="area-map" aria-labelledby={labelId}>
+      <div className="area-map-heading">
+        <div>
+          <h4 id={labelId}>Escolha uma área no mapa</h4>
+          <p id={helpId}>Chegada e retorno dentro da área marcada. Clique para criar ou mover a bolha.</p>
+        </div>
+        <button type="button" className={`area-map-region-button ${!value ? 'is-active' : ''}`} onClick={() => onChange(undefined)}>
+          Usar toda a região
+        </button>
+      </div>
+
+      <div className="area-map-canvas">
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+          className={dragging ? 'is-dragging' : ''}
+          role="img"
+          aria-label="Mapa para selecionar a área de chegada e retorno"
+          aria-describedby={helpId}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={() => { gesture.current = null; setDragging(false) }}
+        >
+          <defs><clipPath id={clipId}><rect width={WIDTH} height={HEIGHT} /></clipPath></defs>
+          <g clipPath={`url(#${clipId})`}>
+            <rect width={WIDTH} height={HEIGHT} className="area-map-water" />
+            <path d={path(graticule) ?? undefined} className="area-map-grid" />
+            {countries.map((country, index) => <path key={country.id ?? index} d={path(country) ?? undefined} className="area-map-country" />)}
+            {areaPath && <path d={areaPath} className="area-map-selection" />}
+            {markers.map(({ airport, point, inside }) => (
+              <g key={airport.code} className={`area-map-airport ${inside ? 'is-inside' : ''}`}>
+                <circle cx={point[0]} cy={point[1]} r={inside ? 4 : 2.7} />
+                <title>{airport.city} · {airport.name} ({airport.code})</title>
+              </g>
+            ))}
+            {cityLabels.map(({ code, city, point }) => (
+              <text key={`label-${code}`} x={point[0] + 9} y={point[1] - 9} className="area-map-city-label">{city}</text>
+            ))}
+            {areaCenter && <g className="area-map-center">
+              <circle cx={areaCenter[0]} cy={areaCenter[1]} r={8} />
+              <circle cx={areaCenter[0]} cy={areaCenter[1]} r={2.5} />
+            </g>}
+            {areaEdge && areaCenter && <g className="area-map-resize" data-area-resize="true">
+              <line x1={areaCenter[0]} y1={areaCenter[1]} x2={areaEdge[0]} y2={areaEdge[1]} />
+              <circle cx={areaEdge[0]} cy={areaEdge[1]} r={18} className="area-map-resize-target" />
+              <circle cx={areaEdge[0]} cy={areaEdge[1]} r={10} />
+              <path d={`M${areaEdge[0] - 4},${areaEdge[1]}h8 m-6,-3 -3,3 3,3 m4,-6 3,3 -3,3`} />
+            </g>}
+          </g>
+        </svg>
+        <div className="area-map-controls" aria-label="Controles do mapa">
+          <button type="button" onClick={() => zoom(1.4)} aria-label="Aproximar mapa" title="Aproximar"><Plus size={17} /></button>
+          <button type="button" onClick={() => zoom(1 / 1.4)} aria-label="Afastar mapa" title="Afastar"><Minus size={17} /></button>
+          <button type="button" onClick={() => setCamera(regionCamera(region, focusAirport, value))} aria-label="Recentrar mapa" title="Recentrar"><RotateCcw size={15} /></button>
+        </div>
+        <div className="area-map-pan-hint"><Move size={12} /> Arraste para mover o mapa</div>
+        <a className="area-map-attribution" href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noreferrer">Mapa: Natural Earth</a>
+      </div>
+
+      {value ? <div className="area-map-details">
+        <div className="area-map-slider-heading">
+          <label htmlFor={sliderId}>Tamanho da área</label>
+          <span>Raio aproximado de {Math.round(value.radiusKm).toLocaleString('pt-BR')} km</span>
+        </div>
+        <input
+          id={sliderId}
+          className="area-map-slider"
+          type="range"
+          min={MIN_RADIUS}
+          max={MAX_RADIUS}
+          step={25}
+          value={value.radiusKm}
+          aria-valuetext={`Raio de ${Math.round(value.radiusKm)} quilômetros`}
+          onChange={(event) => onChange({ ...value, radiusKm: Number(event.target.value) })}
+        />
+        <div className="area-map-slider-ends"><span>Menor área</span><span>Maior área</span></div>
+        <div className="area-map-summary" aria-live="polite">
+          <LocateFixed size={17} />
+          <p><strong>{includedAirports.length} {includedAirports.length === 1 ? 'aeroporto cadastrado' : 'aeroportos cadastrados'} na área</strong>
+            {nearbyCities.length > 0 && <span>Próximo de {nearbyCities.join(', ')}.</span>}
+            <span>O catálogo geográfico não garante ofertas. A área não estima tempo de trem ou estrada.</span>
+          </p>
+        </div>
+      </div> : <div className="area-map-empty">
+        <LocateFixed size={17} />
+        <p><strong>Toda a região selecionada</strong><span>Para limitar no mapa, clique em um ponto e ajuste o tamanho da bolha. Você também pode marcar a área pelo botão.</span></p>
+        <button type="button" className="area-map-create-button" onClick={() => onChange({ lat: camera.lat, lon: camera.lon, radiusKm: 500 })}>Marcar área no centro</button>
+      </div>}
+    </section>
+  )
+}

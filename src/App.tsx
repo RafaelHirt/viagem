@@ -1,4 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import QueryWizard, { initialFlight, initialHotel, type FlightDraft, type HotelDraft } from "./components/QueryWizard";
+import { labelAirport, findAirport } from "./shared/airports";
+import SetupGuide from "./components/SetupGuide";
 import {
   ArrowDownRight,
   ArrowRight,
@@ -44,54 +47,10 @@ import type {
 
 type Tab = "overview" | "explore" | "monitors" | "settings";
 type Kind = "flight" | "hotel";
-type FlightDraft = {
-  origin: string;
-  destination: string;
-  arrivalAirport: string;
-  departureAirport: string;
-  departureDate: string;
-  returnDate: string;
-  minDays: string;
-  maxDays: string;
-  horizonMonths: string;
-  maxAirportDistanceKm: string;
-  adults: string;
-  allowOpenJaw: boolean;
-};
-type HotelDraft = {
-  property: string;
-  propertyId: string;
-  checkIn: string;
-  checkOut: string;
-  pattern: "weekend" | "weekdays" | "both";
-  adults: string;
-};
-const initialFlight: FlightDraft = {
-  origin: "",
-  destination: "Europa",
-  arrivalAirport: "",
-  departureAirport: "",
-  departureDate: "",
-  returnDate: "",
-  minDays: "10",
-  maxDays: "20",
-  horizonMonths: "12",
-  maxAirportDistanceKm: "600",
-  adults: "1",
-  allowOpenJaw: true,
-};
-const initialHotel: HotelDraft = {
-  property: "",
-  propertyId: "",
-  checkIn: "",
-  checkOut: "",
-  pattern: "weekend",
-  adults: "2",
-};
 const tabs: { id: Tab; label: string; icon: typeof Plane }[] = [
   { id: "overview", label: "Visão geral", icon: LayoutDashboard },
-  { id: "explore", label: "Explorar preços", icon: Compass },
-  { id: "monitors", label: "Meus monitores", icon: Bell },
+  { id: "explore", label: "Explorar agora", icon: Compass },
+  { id: "monitors", label: "Meus alertas", icon: Bell },
   { id: "settings", label: "Configurações", icon: Settings2 },
 ];
 const money = (cents: number) =>
@@ -192,305 +151,11 @@ function StatusPill({
     </span>
   );
 }
-function QueryFields({
-  kind,
-  flight,
-  setFlight,
-  hotel,
-  setHotel,
-}: {
-  kind: Kind;
-  flight: FlightDraft;
-  setFlight: (value: FlightDraft) => void;
-  hotel: HotelDraft;
-  setHotel: (value: HotelDraft) => void;
-}) {
-  const f = (key: keyof FlightDraft, value: string | boolean) =>
-    setFlight({ ...flight, [key]: value });
-  const h = (key: keyof HotelDraft, value: string) =>
-    setHotel({ ...hotel, [key]: value });
-  return kind === "flight" ? (
-    <>
-      <div className="form-section-heading">
-        <span className="section-icon">
-          <MapPin size={17} />
-        </span>
-        <div>
-          <h3>De onde você quer partir?</h3>
-          <p>
-            Escolha uma região e deixe as oportunidades definirem o destino.
-          </p>
-        </div>
-      </div>
-      <div className="field-grid">
-        <Field
-          label="Aeroporto de origem"
-          hint="Código de 3 letras, como GRU, VCP ou CWB"
-        >
-          <input
-            required
-            autoCapitalize="characters"
-            maxLength={3}
-            minLength={3}
-            pattern="[A-Za-z]{3}"
-            placeholder="Ex.: GRU"
-            value={flight.origin}
-            onChange={(e) => f("origin", e.target.value.toUpperCase())}
-          />
-        </Field>
-        <Field
-          label="Destino ou região"
-          hint="Uma região, cidade ou código de aeroporto"
-        >
-          <input
-            required
-            maxLength={80}
-            placeholder="Ex.: Europa, Lisboa ou LIS"
-            value={flight.destination}
-            onChange={(e) => f("destination", e.target.value)}
-          />
-        </Field>
-      </div>
-      <div className="form-divider" />
-      <div className="form-section-heading">
-        <span className="section-icon">
-          <CalendarDays size={17} />
-        </span>
-        <div>
-          <h3>Flexibilidade que cabe na sua viagem</h3>
-          <p>Um dia a mais ou a menos pode fazer diferença no preço.</p>
-        </div>
-      </div>
-      <div className="field-grid three">
-        <Field label="Duração mínima">
-          <div className="input-suffix">
-            <input
-              type="number"
-              required
-              min={1}
-              max={90}
-              value={flight.minDays}
-              onChange={(e) => f("minDays", e.target.value)}
-            />
-            <span>dias</span>
-          </div>
-        </Field>
-        <Field label="Duração máxima">
-          <div className="input-suffix">
-            <input
-              type="number"
-              required
-              min={Number(flight.minDays) || 1}
-              max={90}
-              value={flight.maxDays}
-              onChange={(e) => f("maxDays", e.target.value)}
-            />
-            <span>dias</span>
-          </div>
-        </Field>
-        <Field label="Buscar nos próximos">
-          <select
-            value={flight.horizonMonths}
-            onChange={(e) => f("horizonMonths", e.target.value)}
-          >
-            {[1, 3, 6, 9, 12].map((months) => (
-              <option key={months} value={months}>
-                {months} {months === 1 ? "mês" : "meses"}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
-      <div className="flexibility-box">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={flight.allowOpenJaw}
-            onChange={(e) => f("allowOpenJaw", e.target.checked)}
-          />
-          <span>
-            <strong>Chegar por uma cidade e voltar por outra</strong>
-            <small>Mais combinações para encontrar uma boa oportunidade.</small>
-          </span>
-        </label>
-        {flight.allowOpenJaw && (
-          <Field
-            label="Distância máxima entre chegada e saída"
-            hint="Distância em linha reta; o transporte entre cidades é pago à parte."
-          >
-            <div className="input-suffix">
-              <input
-                type="number"
-                min={1}
-                max={20050}
-                placeholder="Sem limite"
-                value={flight.maxAirportDistanceKm}
-                onChange={(e) => f("maxAirportDistanceKm", e.target.value)}
-              />
-              <span>km</span>
-            </div>
-          </Field>
-        )}
-      </div>
-      <details className="advanced-fields">
-        <summary>
-          <SlidersHorizontal size={16} />
-          Mais preferências<span>Datas, aeroportos e passageiros</span>
-        </summary>
-        <div className="field-grid">
-          <Field label="Aeroporto de chegada (opcional)">
-            <input
-              maxLength={3}
-              pattern="[A-Za-z]{3}"
-              placeholder="Ex.: CDG"
-              value={flight.arrivalAirport}
-              onChange={(e) =>
-                f("arrivalAirport", e.target.value.toUpperCase())
-              }
-            />
-          </Field>
-          <Field label="Aeroporto de saída (opcional)">
-            <input
-              maxLength={3}
-              pattern="[A-Za-z]{3}"
-              placeholder="Ex.: MAD"
-              value={flight.departureAirport}
-              onChange={(e) =>
-                f("departureAirport", e.target.value.toUpperCase())
-              }
-            />
-          </Field>
-          <Field label="Data de ida (opcional)">
-            <input
-              type="date"
-              required={Boolean(flight.returnDate)}
-              value={flight.departureDate}
-              onChange={(e) => f("departureDate", e.target.value)}
-            />
-          </Field>
-          <Field label="Data de volta (opcional)">
-            <input
-              type="date"
-              required={Boolean(flight.departureDate)}
-              min={flight.departureDate || undefined}
-              value={flight.returnDate}
-              onChange={(e) => f("returnDate", e.target.value)}
-            />
-          </Field>
-          <Field label="Adultos">
-            <input
-              type="number"
-              required
-              min={1}
-              max={9}
-              value={flight.adults}
-              onChange={(e) => f("adults", e.target.value)}
-            />
-          </Field>
-        </div>
-      </details>
-    </>
-  ) : (
-    <>
-      <div className="form-section-heading">
-        <span className="section-icon">
-          <Hotel size={18} />
-        </span>
-        <div>
-          <h3>Um bom hotel. Um preço melhor.</h3>
-          <p>
-            Encontre as datas mais vantajosas para o lugar que você quer
-            conhecer.
-          </p>
-        </div>
-      </div>
-      <div className="field-grid">
-        <Field
-          label="Nome do hotel"
-          hint="Inclua a cidade para uma identificação mais precisa."
-          wide
-        >
-          <input
-            required
-            maxLength={160}
-            placeholder="Ex.: Fasano Boa Vista, Porto Feliz"
-            value={hotel.property}
-            onChange={(e) => h("property", e.target.value)}
-          />
-        </Field>
-        <Field label="Período da estadia">
-          <select
-            value={hotel.pattern}
-            onChange={(e) => h("pattern", e.target.value)}
-          >
-            <option value="weekend">Fim de semana · sexta a domingo</option>
-            <option value="weekdays">Durante a semana · domingo a sexta</option>
-            <option value="both">Ambos os períodos</option>
-          </select>
-        </Field>
-        <Field label="Adultos">
-          <input
-            type="number"
-            min={1}
-            max={10}
-            required
-            value={hotel.adults}
-            onChange={(e) => h("adults", e.target.value)}
-          />
-        </Field>
-      </div>
-      <div className="inline-note">
-        <Info size={17} />
-        <span>
-          Comparamos períodos equivalentes. Sexta a domingo e domingo a sexta
-          têm referências de preço separadas.
-        </span>
-      </div>
-      <details className="advanced-fields">
-        <summary>
-          <SlidersHorizontal size={16} />
-          Mais preferências<span>Datas e identificação do hotel</span>
-        </summary>
-        <div className="field-grid">
-          <Field label="Check-in (opcional)">
-            <input
-              type="date"
-              required={Boolean(hotel.checkOut)}
-              value={hotel.checkIn}
-              onChange={(e) => h("checkIn", e.target.value)}
-            />
-          </Field>
-          <Field label="Check-out (opcional)">
-            <input
-              type="date"
-              required={Boolean(hotel.checkIn)}
-              min={hotel.checkIn || undefined}
-              value={hotel.checkOut}
-              onChange={(e) => h("checkOut", e.target.value)}
-            />
-          </Field>
-          <Field
-            label="ID do hotel na fonte (opcional)"
-            hint="Use o identificador fornecido pela integração, se disponível."
-            wide
-          >
-            <input
-              value={hotel.propertyId}
-              maxLength={100}
-              onChange={(e) => h("propertyId", e.target.value)}
-              placeholder="Identificador do hotel"
-            />
-          </Field>
-        </div>
-      </details>
-    </>
-  );
-}
 function queryDescription(summary: MonitorSummary) {
   const q = summary.monitor.query;
   if (summary.monitor.kind === "flight") {
     const flight = q as FlightQuery;
-    return `${flight.origin} → ${flight.destination} · ${flight.minDays} a ${flight.maxDays} dias`;
+    return `${labelAirport(flight.origin)} → ${flight.destination} · ${flight.minDays} a ${flight.maxDays} dias`;
   }
   const hotel = q as HotelQuery;
   return `${hotel.property} · ${hotel.pattern === "weekend" ? "sexta a domingo" : hotel.pattern === "weekdays" ? "domingo a sexta" : "semana e fins de semana"}`;
@@ -522,11 +187,11 @@ function OfferCard({ offer }: { offer: Offer }) {
       </div>
       {(offer.arrivalAirport || offer.departureAirport) && (
         <p className="offer-route">
-          {offer.origin ? `${offer.origin} → ` : ""}
-          {offer.arrivalAirport}
+          {offer.origin ? `${labelAirport(offer.origin)} → ` : ""}
+          {offer.arrivalAirport ? labelAirport(offer.arrivalAirport) : ""}
           {offer.departureAirport &&
           offer.departureAirport !== offer.arrivalAirport
-            ? ` / volta por ${offer.departureAirport}`
+            ? ` / volta por ${labelAirport(offer.departureAirport)}`
             : ""}
         </p>
       )}
@@ -601,10 +266,10 @@ export default function App() {
     try {
       const nextStatus = await api<Status>("/status");
       setStatus(nextStatus);
-      if (!nextStatus.authConfigured || nextStatus.authenticated) {
+      if (nextStatus.authConfigured && nextStatus.authenticated) {
         const data = await api<{ monitors: MonitorSummary[] }>("/monitors");
         setMonitors(data.monitors);
-      }
+      } else setMonitors([]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -634,9 +299,9 @@ export default function App() {
   }
   function makeQuery(): FlightQuery | HotelQuery {
     if (kind === "flight") {
-      if (!/^[A-Z]{3}$/.test(flight.origin.trim()))
+      if (!findAirport(flight.origin.trim()))
         throw new Error(
-          "Informe o código de três letras do aeroporto de origem.",
+          "Selecione seu aeroporto de origem na lista de cidades.",
         );
       if (!flight.destination.trim())
         throw new Error("Informe um destino ou região.");
@@ -653,6 +318,7 @@ export default function App() {
       return {
         origin: flight.origin.trim(),
         destination: flight.destination.trim(),
+        ...(flight.area ? { area: flight.area } : {}),
         minDays: Number(flight.minDays),
         maxDays: Number(flight.maxDays),
         horizonMonths: Number(flight.horizonMonths),
@@ -675,8 +341,8 @@ export default function App() {
           : {}),
       };
     }
-    if (!hotel.property.trim())
-      throw new Error("Informe qual hotel deseja acompanhar.");
+    if (!hotel.property.trim() || !hotel.propertyId)
+      throw new Error("Selecione um hotel encontrado na Booking antes de continuar.");
     if (Boolean(hotel.checkIn) !== Boolean(hotel.checkOut))
       throw new Error(
         "Informe check-in e check-out ou deixe os dois em branco.",
@@ -685,7 +351,9 @@ export default function App() {
       throw new Error("O check-out precisa ser depois do check-in.");
     return {
       property: hotel.property.trim(),
+      propertyVerified: true,
       pattern: hotel.pattern,
+      horizonMonths: Number(hotel.horizonMonths),
       adults: Number(hotel.adults),
       ...(hotel.propertyId ? { propertyId: hotel.propertyId.trim() } : {}),
       ...(hotel.checkIn
@@ -725,8 +393,8 @@ export default function App() {
           name:
             monitorName.trim() ||
             (kind === "flight"
-              ? `${flight.origin} → ${flight.destination}`
-              : hotel.property),
+              ? `${findAirport(flight.origin)?.city || flight.origin} → ${flight.arrivalAirport ? findAirport(flight.arrivalAirport)?.city || flight.destination : flight.destination}`.slice(0, 120)
+              : hotel.property.slice(0, 120)),
           query,
           rule: {
             dropPercent: Number(dropPercent),
@@ -744,8 +412,8 @@ export default function App() {
       setMonitorName("");
       setToast(
         saved.additionalMonitors?.length
-          ? "Monitores criados com históricos separados para semana e fim de semana."
-          : "Monitor criado. A referência de preço será construída com as consultas.",
+          ? "Alertas criados com históricos separados para semana e fim de semana."
+          : "Alerta criado. A referência de preço será construída com as consultas.",
       );
     } catch (e) {
       setError((e as Error).message);
@@ -1072,7 +740,7 @@ export default function App() {
                       onClick={() => openCreate()}
                     >
                       <Plus size={18} />
-                      Criar monitor
+                      Criar alerta
                     </button>
                   </div>
                   <section className="hero-card">
@@ -1147,7 +815,7 @@ export default function App() {
                         <Bell size={20} />
                       </span>
                       <div>
-                        <p>Monitores habilitados</p>
+                        <p>Alertas habilitados</p>
                         <strong>
                           {activeCount}
                           <small> / {monitors.length}</small>
@@ -1353,7 +1021,7 @@ export default function App() {
                           {configuredCount === 0
                             ? "Configure as credenciais das fontes para habilitar as consultas reais."
                             : "Uma das fontes ainda precisa de credenciais para habilitar todas as buscas."}{" "}
-                          Você já pode organizar seus monitores.
+                          Selecione destinos para planejar suas próximas buscas.
                         </p>
                       </div>
                       <button
@@ -1375,56 +1043,17 @@ export default function App() {
                         O PREÇO PODE ESCOLHER A DATA
                       </span>
                       <h1>
-                        Explore as possibilidades
+                        Explore preços agora
                         <span className="heading-dot">.</span>
                       </h1>
                       <p>
-                        Mais liberdade para encontrar a viagem que vale a pena.
+                        Veja quanto custa comprar hoje para viajar nos próximos meses. Depois, se quiser, crie um alerta.
                       </p>
                     </div>
                   </div>
                   <div className="explore-layout">
                     <section className="panel search-panel">
-                      <div className="search-panel-top">
-                        <KindSwitch
-                          value={kind}
-                          onChange={(value) => {
-                            setKind(value);
-                            setResults(null);
-                            setExploreError("");
-                          }}
-                        />
-                        <span className="live-label">
-                          <Search size={14} />
-                          Pesquisa sob demanda
-                        </span>
-                      </div>
-                      <form onSubmit={explore}>
-                        <QueryFields {...queryProps} />
-                        <div className="form-actions">
-                          <button
-                            type="button"
-                            className="button button-secondary"
-                            onClick={() => openCreate()}
-                          >
-                            <Bell size={17} />
-                            Monitorar esta busca
-                          </button>
-                          <button
-                            className="button button-primary"
-                            disabled={submitting}
-                          >
-                            {submitting ? (
-                              <LoaderCircle size={18} className="spin" />
-                            ) : (
-                              <Search size={18} />
-                            )}
-                            {submitting
-                              ? "Consultando preços…"
-                              : "Encontrar oportunidades"}
-                          </button>
-                        </div>
-                      </form>
+                      <QueryWizard mode="explore" {...queryProps} submitting={submitting} onSubmit={explore} onKindChange={(value) => { setKind(value); setResults(null); setExploreError(""); }} />
                     </section>
                     <aside className="explore-aside">
                       <div className="panel search-tip">
@@ -1522,7 +1151,7 @@ export default function App() {
                           onClick={() => openCreate()}
                         >
                           <Bell size={16} />
-                          Acompanhar esta busca
+                          Criar alerta desta busca
                         </button>
                       </div>
                       <div
@@ -1590,7 +1219,7 @@ export default function App() {
                       <h1>
                         {createMonitor
                           ? "Uma nova oportunidade começa aqui"
-                          : "Meus monitores"}
+                          : "Meus alertas"}
                         <span className="heading-dot">.</span>
                       </h1>
                       <p>
@@ -1605,7 +1234,7 @@ export default function App() {
                         onClick={() => openCreate()}
                       >
                         <Plus size={18} />
-                        Criar monitor
+                        Criar alerta
                       </button>
                     )}
                   </div>
@@ -1615,12 +1244,9 @@ export default function App() {
                       <div>
                         <strong>Coleta automática aguardando ativação</strong>
                         <p>
-                          Os monitores podem ser consultados manualmente. Para
-                          agendar consultas, configure{" "}
-                          <code>ENABLE_SCHEDULED_COLLECTION=true</code> no
-                          servidor. Cada rodada respeita o limite de consultas
-                          definido.
+                          Seus alertas ainda não consultam preços automaticamente. Confira a ativação em Configurações; enquanto isso, você pode consultar cada alerta manualmente.
                         </p>
+                        <button type="button" className="text-button" onClick={() => navigate("settings")}>Ver configurações <ArrowRight size={14} /></button>
                       </div>
                     </div>
                   )}
@@ -1678,24 +1304,11 @@ export default function App() {
                     </div>
                   )}
                   {createMonitor ? (
-                    <form className="panel monitor-form" onSubmit={saveMonitor}>
-                      <div className="search-panel-top">
-                        <KindSwitch value={kind} onChange={setKind} />
-                        <button
-                          type="button"
-                          className="text-button"
-                          onClick={() => {
-                            setCreateMonitor(false);
-                            setError("");
-                          }}
-                        >
-                          <X size={16} />
-                          Cancelar
-                        </button>
-                      </div>
+                    <section className="panel monitor-form">
+                      <QueryWizard mode="monitor" {...queryProps} onKindChange={setKind} submitting={submitting} onSubmit={saveMonitor} onCancel={() => { setCreateMonitor(false); setError(""); }} alertSummary={`${dropPercent}% abaixo da média dos últimos ${windowDays} dias · ${[email ? "e-mail" : "", telegram ? "Telegram" : ""].filter(Boolean).join(" e ") || "sem canal selecionado"}`} alertFields={<>
                       <div className="field-grid monitor-name">
                         <Field
-                          label="Nome do monitor (opcional)"
+                          label="Nome do alerta (opcional)"
                           hint="Um nome para reconhecer essa vontade de viajar."
                           wide
                         >
@@ -1711,8 +1324,6 @@ export default function App() {
                           />
                         </Field>
                       </div>
-                      <QueryFields {...queryProps} />
-                      <div className="form-divider" />
                       <div className="form-section-heading">
                         <span className="section-icon">
                           <TrendingDown size={18} />
@@ -1810,29 +1421,8 @@ export default function App() {
                           servidor para enviar alertas.
                         </p>
                       )}
-                      <div className="form-actions">
-                        <button
-                          type="button"
-                          className="button button-secondary"
-                          onClick={() => setCreateMonitor(false)}
-                        >
-                          Cancelar
-                        </button>
-                        <button
-                          className="button button-primary"
-                          disabled={submitting}
-                        >
-                          {submitting ? (
-                            <LoaderCircle size={18} className="spin" />
-                          ) : (
-                            <Bell size={17} />
-                          )}
-                          {submitting
-                            ? "Salvando monitor…"
-                            : "Criar meu monitor"}
-                        </button>
-                      </div>
-                    </form>
+                      </>} />
+                    </section>
                   ) : (
                     <>
                       <div className="monitor-toolbar">
@@ -1870,8 +1460,8 @@ export default function App() {
                         <span className="muted-small">
                           {activeCount}{" "}
                           {activeCount === 1
-                            ? "monitor habilitado"
-                            : "monitores habilitados"}
+                            ? "alerta habilitado"
+                            : "alertas habilitados"}
                         </span>
                       </div>
                       {filteredMonitors.length === 0 ? (
@@ -1881,7 +1471,7 @@ export default function App() {
                           </span>
                           <h2>
                             {monitors.length
-                              ? "Nenhum monitor nesta categoria."
+                              ? "Nenhum alerta nesta categoria."
                               : "Seu radar está esperando a primeira viagem."}
                           </h2>
                           <p>
@@ -1901,7 +1491,7 @@ export default function App() {
                             }
                           >
                             <Plus size={18} />
-                            Criar meu primeiro monitor
+                            Criar meu primeiro alerta
                           </button>
                         </div>
                       ) : (
@@ -1929,7 +1519,7 @@ export default function App() {
                                 />
                                 <button
                                   className="icon-button danger-button"
-                                  title="Excluir monitor"
+                                  title="Excluir alerta"
                                   aria-label={`Excluir ${item.monitor.name}`}
                                   disabled={busyId === item.monitor.id}
                                   onClick={() => setDeleteId(item.monitor.id)}
@@ -2051,7 +1641,7 @@ export default function App() {
                 <>
                   <div className="page-heading">
                     <div>
-                      <span className="eyebrow">TUDO PRONTO PARA PARTIR</span>
+                      <span className="eyebrow">PREPARE SEU PAINEL</span>
                       <h1>
                         Conexões do seu radar
                         <span className="heading-dot">.</span>
@@ -2069,6 +1659,7 @@ export default function App() {
                       Atualizar status
                     </button>
                   </div>
+                  <SetupGuide status={status} />
                   <div className="settings-notice">
                     <ShieldCheck size={21} />
                     <div>
@@ -2111,7 +1702,7 @@ export default function App() {
                         description={
                           status.providers.hotels.configured
                             ? "Credenciais da Booking presentes neste deploy. A disponibilidade do hotel e a validade do acesso são verificadas em uma consulta real."
-                            : "Booking é a fonte escolhida para hotéis. A configuração neste deploy está pendente de credenciais elegíveis; a cobertura é verificada em uma consulta real."
+                            : "Booking foi escolhido como fonte. O catálogo de hotéis e o conector de preços ainda precisam ser conectados; preencher as credenciais sozinho não conclui essa integração."
                         }
                       />
                     </div>
@@ -2239,7 +1830,7 @@ export default function App() {
             <span className="delete-icon">
               <Trash2 size={24} />
             </span>
-            <h2 id="delete-title">Excluir este monitor?</h2>
+            <h2 id="delete-title">Excluir este alerta?</h2>
             <p>
               A busca e seu histórico serão removidos. Você pode criar outro
               monitor quando quiser.
@@ -2249,7 +1840,7 @@ export default function App() {
                 className="button button-secondary"
                 onClick={() => setDeleteId(null)}
               >
-                Manter monitor
+                Manter alerta
               </button>
               <button
                 className="button button-danger"
@@ -2259,7 +1850,7 @@ export default function App() {
                 {busyId === deleteId && (
                   <LoaderCircle size={16} className="spin" />
                 )}
-                Excluir monitor
+                Excluir alerta
               </button>
             </div>
           </section>
@@ -2281,7 +1872,7 @@ export default function App() {
             <div className="modal-title">
               <div>
                 <span className="eyebrow">PREÇOS OBSERVADOS</span>
-                <h2 id="history-title">Histórico do monitor</h2>
+                <h2 id="history-title">Histórico do alerta</h2>
               </div>
               <button
                 className="icon-button"
@@ -2306,7 +1897,7 @@ export default function App() {
               <div className="history-empty">
                 <CalendarDays size={30} />
                 <h3>A referência começa na primeira consulta.</h3>
-                <p>Ainda não há observações de preço para este monitor.</p>
+                <p>Ainda não há observações de preço para este alerta.</p>
               </div>
             ) : (
               <div className="history-list">

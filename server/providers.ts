@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ExploreResult, FlightQuery, HotelQuery, Offer, Status } from '../src/shared/types';
-import { AIRPORTS, findAirport, haversineKm } from '../src/shared/domain';
+import { findAirport, haversineKm } from '../src/shared/domain';
+import { isAirportInArea, matchesRegion, REGIONS, searchAirports } from '../src/shared/airports.ts';
 
 /** Only safe, user-facing messages cross the API boundary. */
 export class ProviderError extends Error {
@@ -54,10 +55,6 @@ async function requestSerpApi(parameters: Record<string, string>): Promise<Json>
   return data;
 }
 
-// Transcontinental countries require airport-level geography before classifying
-// their unknown airports as Europe; a country name alone is insufficient.
-const EUROPE_COUNTRIES = new Set(['albania', 'andorra', 'austria', 'belarus', 'belgium', 'bosnia and herzegovina', 'bulgaria', 'croatia', 'cyprus', 'czechia', 'czech republic', 'denmark', 'estonia', 'finland', 'france', 'germany', 'greece', 'hungary', 'iceland', 'ireland', 'italy', 'kosovo', 'latvia', 'liechtenstein', 'lithuania', 'luxembourg', 'malta', 'moldova', 'monaco', 'montenegro', 'netherlands', 'north macedonia', 'norway', 'poland', 'portugal', 'romania', 'san marino', 'serbia', 'slovakia', 'slovenia', 'spain', 'sweden', 'switzerland', 'ukraine', 'united kingdom', 'vatican city']);
-
 function textKey(value: string): string { return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase(); }
 
 function daysBetween(start: string, end: string): number {
@@ -101,6 +98,16 @@ function enforceDistance(query: FlightQuery): number | undefined {
   return distance;
 }
 
+function enforceArea(query: FlightQuery, entry: string, exit: string): void {
+  if (!query.area) return;
+  for (const code of [entry, exit]) {
+    const airport = findAirport(code);
+    if (!airport || !isAirportInArea(airport, query.area)) {
+      throw new ProviderError('AIRPORT_OUTSIDE_AREA', 'Os aeroportos de chegada e retorno precisam ficar dentro da área marcada no mapa.', 400);
+    }
+  }
+}
+
 function conditionsWarnings(query: FlightQuery): string[] {
   const warnings = ['Preços candidatos: retorno, bagagem, condições e disponibilidade ainda precisam de confirmação antes de um alerta.'];
   if (query.adults > 1) warnings.push('A pesquisa usa a quantidade de adultos informada. A forma de apresentar o total para vários passageiros ainda precisa ser validada; não tratamos este valor como preço por pessoa.');
@@ -141,19 +148,22 @@ function normalizeExact(data: Json, query: FlightQuery, entry: string): Offer[] 
 }
 
 function matchesDestination(deal: Json, query: FlightQuery): boolean {
-  const airport = string(deal.arrival_airport_code).toUpperCase();
+  const code = string(deal.arrival_airport_code).toUpperCase();
+  const airport = findAirport(code);
+  if (query.area && (!airport || !isAirportInArea(airport, query.area))) return false;
   const requiredAirport = exactEntry(query) || query.departureAirport;
-  if (requiredAirport) return airport === requiredAirport;
+  if (requiredAirport) return code === requiredAirport;
+  // In map mode the circle is the destination. Its human label is not a
+  // second geographical filter (and may cross country/region borders).
+  if (query.area) return true;
   const destination = textKey(query.destination);
-  if (destination === 'europa' || destination === 'europe') {
-    const country = textKey(string(deal.country));
-    // Known non-Brazil airports in the starter table are all European. Country
-    // evidence permits other European airports without inventing coordinates.
-    return EUROPE_COUNTRIES.has(country) || Boolean(findAirport(airport) && findAirport(airport)?.country !== 'Brasil');
+  const region = REGIONS.find((item) => item.id === destination || textKey(item.label) === destination ||
+    (destination === 'europe' && item.id === 'europe'));
+  if (region) {
+    return Boolean(airport && matchesRegion(airport, region.id));
   }
   if (destination === textKey(string(deal.name)) || destination === textKey(string(deal.country))) return true;
-  const known = AIRPORTS.filter((item) => textKey(item.name.split(' · ')[0]) === destination || textKey(item.country) === destination);
-  return known.some((item) => item.code === airport);
+  return searchAirports(query.destination, 100).some((item) => item.code === code);
 }
 
 async function exploreFlight(query: FlightQuery): Promise<ExploreResult> {
@@ -166,6 +176,7 @@ async function exploreFlight(query: FlightQuery): Promise<ExploreResult> {
     if (!entry) throw new ProviderError('EXACT_AIRPORT_REQUIRED', 'Para consultar datas exatas, informe o aeroporto de chegada. Deixe as datas livres para explorar uma região.', 400);
     const exit = query.departureAirport || entry;
     const openJaw = exit !== entry;
+    enforceArea(query, entry, exit);
     // Include the entry inferred from destination in the preflight distance check.
     enforceDistance({ ...query, arrivalAirport: entry, departureAirport: exit });
     const parameters: Record<string, string> = openJaw ? {

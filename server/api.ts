@@ -3,6 +3,7 @@ import type { ExploreResult, HotelQuery, Monitor, MonitorSummary, Observation, S
 import { getBaseline, getPriceDrop, validateMonitor } from '../src/shared/domain.ts';
 import { clearSessionCookie, createLoginLimiter, createSessionCookie, hasSession, isSameOrigin, passwordMatches } from './auth.ts';
 import { explore, getProviderStatus, ProviderError } from './providers.ts';
+import { suggestHotels } from './suggestions.ts';
 import { getNotificationStatus, sendNotifications } from './notifications.ts';
 import type { Delivery } from './notifications.ts';
 import type { Storage } from './storage.ts';
@@ -77,6 +78,7 @@ export interface ApiOptions {
   search?: typeof explore;
   providerStatus?: typeof getProviderStatus;
   notify?: typeof sendNotifications;
+  hotelSuggestions?: typeof suggestHotels;
 }
 
 interface RunResult {
@@ -114,7 +116,7 @@ async function runMonitor(storage: Storage, monitor: Monitor, search: typeof exp
 }
 
 export function createApiHandler(options: ApiOptions): (request: Request) => Promise<Response> {
-  const { storage, development = false, search = explore, providerStatus = getProviderStatus, notify = sendNotifications } = options;
+  const { storage, development = false, search = explore, providerStatus = getProviderStatus, notify = sendNotifications, hotelSuggestions = suggestHotels } = options;
   const password = options.password ?? process.env.DASHBOARD_PASSWORD ?? (development ? 'viagem-local' : '');
   const configured = development ? password.length > 0 : password.length >= 12;
   const mayAttemptLogin = createLoginLimiter();
@@ -145,6 +147,9 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
         return json({ authenticated: true }, 200, { 'Set-Cookie': createSessionCookie(password, development) });
       }
       if (!hasSession(request, password)) throw new HttpError(401, 'Entre com sua senha para acessar o painel.');
+      if (path === '/api/suggestions/hotels' && method === 'GET') {
+        return json(await hotelSuggestions(url.searchParams.get('q') ?? '', url.searchParams.get('location') ?? undefined));
+      }
       if (path === '/api/monitors' && method === 'GET') {
         const monitors = await storage.listMonitors();
         return json({ monitors: await Promise.all(monitors.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((monitor) => summarizeMonitor(storage, monitor))) });

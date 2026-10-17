@@ -1,3 +1,10 @@
+export interface GeoArea {
+  lat: number
+  lon: number
+  radiusKm: number
+  label?: string
+}
+
 export interface FlightQuery {
   origin: string
   destination: string
@@ -11,15 +18,29 @@ export interface FlightQuery {
   maxAirportDistanceKm?: number
   adults: number
   allowOpenJaw: boolean
+  area?: GeoArea
+}
+
+export interface HotelSuggestion {
+  id: string
+  name: string
+  location: string
+  source: 'booking'
+  verified: true
+  lat?: number
+  lon?: number
+  url?: string
 }
 
 export interface HotelQuery {
   property: string
   propertyId?: string
+  propertyVerified?: boolean
   checkIn?: string
   checkOut?: string
   pattern: 'weekend' | 'weekdays' | 'both'
   adults: number
+  horizonMonths?: number
 }
 
 export interface Monitor {

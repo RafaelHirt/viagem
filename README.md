@@ -30,6 +30,8 @@ Consulte [Publicação e configuração](docs/DEPLOY.md) para as variáveis de f
 
 ## O que esta primeira versão faz
 
+- Separar exploração imediata e criação de alertas em formulários por etapas, tanto para passagens quanto para hotéis.
+- Encontrar aeroportos digitando cidade ou nome, escolher regiões sugeridas e marcar uma área circular no mapa, sem precisar conhecer códigos ou estimar quilômetros.
 - Explorar passagens com datas exatas ou descobrir ofertas com duração variável; apresenta a cobertura retornada, sem inventar preços.
 - Consultar itinerários com cidades de chegada e saída diferentes em datas definidas e validar a distância entre aeroportos conhecidos.
 - Criar, pausar, consultar e excluir monitores, com persistência local ou Netlify Blobs no deploy.
@@ -42,7 +44,7 @@ A documentação, os parâmetros e o adaptador da SerpApi foram verificados; **a
 
 Os resultados de passagens desta versão são candidatos: a sequência completa de seleção do retorno e confirmação das opções de compra ainda não está implementada. Portanto não geram alertas de preço confirmado. A exploração flexível é uma amostra de ida e volta pela mesma cidade; não cobre exaustivamente um ano nem todos os pares de entrada e saída. Consultas exatas suportam o formato multicidade.
 
-Booking permanece a fonte de hotéis confirmada pelo usuário. Sua conexão existente não está presente neste checkout; o adaptador autenticado de hotéis precisa ser incorporado ao servidor. Não existe consulta de hotel fictícia no lugar dessa integração.
+Booking permanece a fonte de hotéis escolhida pelo usuário. O autocomplete pesquisa um índice privado quando houver um catálogo real importado; sem ele, informa que o nome não foi validado e bloqueia a seleção. O acesso de parceiro, a importação do catálogo e o adaptador autenticado de preços continuam pendentes. Não existe consulta de hotel fictícia no lugar dessa integração.
 
 A coleta agendada começa desativada. E-mail e Telegram têm transportes implementados, mas precisam de credenciais, histórico suficiente e ofertas confirmadas para enviar alertas reais. Nenhuma notificação foi enviada durante a configuração.
 
@@ -52,3 +54,5 @@ A coleta agendada começa desativada. E-mail e Telegram têm transportes impleme
 - [Validação atual da fonte de passagens](docs/VALIDACAO-AEREOS.md).
 - [Pesquisa e comparação dos fornecedores](docs/FONTES.md).
 - [Publicação e configuração](docs/DEPLOY.md).
+- [Busca de hotéis e pré-requisitos Booking](docs/HOTEIS.md).
+- [Origem e licença dos dados geográficos](docs/DADOS-GEOGRAFICOS.md).
