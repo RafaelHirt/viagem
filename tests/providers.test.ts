@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { explore, getProviderStatus, ProviderError } from '../server/providers';
 import type { FlightQuery } from '../src/shared/types';
 import { findAirport } from '../src/shared/airports';
+import { linkedAdults } from '../server/flight-passengers';
 
 const query: FlightQuery = {
   origin: 'GRU', destination: 'Europa', arrivalAirport: 'CDG', departureAirport: 'CDG',
@@ -75,7 +76,7 @@ describe('real price provider adapter', () => {
   });
 
   it('retains demonstrated outbound connections and passenger count without inventing a return itinerary or price basis', async () => {
-    vi.mocked(fetch).mockResolvedValue(response({ ...fixedData, best_flights: [{ price: 9850, total_duration: 975, flights: [
+    vi.mocked(fetch).mockResolvedValue(response({ ...fixedData, search_parameters: { currency: 'BRL', adults: 2 }, best_flights: [{ price: 9850, total_duration: 975, flights: [
       { departure_airport: { id: 'GRU', time: '2027-03-10 18:00' }, arrival_airport: { id: 'LIS', time: '2027-03-11 07:00' }, airline: 'TAP', flight_number: 'TP 88' },
       { departure_airport: { id: 'LIS', time: '2027-03-11 10:00' }, arrival_airport: { id: 'CDG', time: '2027-03-11 13:00' }, airline: 'TAP', flight_number: 'TP 44' },
     ] }] }));
@@ -100,6 +101,44 @@ describe('real price provider adapter', () => {
       { departure_id: 'GRU', arrival_id: 'CDG', date: '2027-03-10' },
       { departure_id: 'AMS', arrival_id: 'GRU', date: '2027-03-21' },
     ]);
+  });
+
+  it.each([undefined, 1, 3])('rejects a two-adult quote when the source passenger count is %s', async adults => {
+    vi.mocked(fetch).mockResolvedValue(response({ ...fixedData, search_parameters: { currency: 'BRL', adults } }));
+    await expect(explore('flight', { ...query, adults: 2 })).rejects.toMatchObject({ code: 'PROVIDER_PASSENGER_MISMATCH' });
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it('does not use a one-adult discovery fare or link as a quote for two adults', async () => {
+    const oneAdultLink = 'https://www.google.com/travel/flights?tfs=QAE';
+    const twoAdultLink = 'https://www.google.com/travel/flights?tfs=QgIBAQ';
+    expect(linkedAdults(oneAdultLink)).toBe(1);
+    expect(linkedAdults(twoAdultLink)).toBe(2);
+    vi.mocked(fetch).mockImplementation(async input => {
+      const params = new URL(String(input)).searchParams;
+      if (params.get('engine') === 'google_flights_deals') return response({ search_parameters: { adults: 2 }, deals: [{ price: 4303, departure_airport_code: 'GRU', arrival_airport_code: 'MXP', name: 'Milano', start_date: '2027-03-10', end_date: '2027-03-21', flight_link: oneAdultLink }] });
+      expect(params.get('adults')).toBe('2'); expect(params.get('arrival_id')).toBe('MXP');
+      expect(params.get('outbound_date')).toBe('2027-03-10'); expect(params.get('return_date')).toBe('2027-03-21');
+      expect(params.get('deep_search')).toBe('true');
+      return response({ search_parameters: { adults: 2, currency: 'BRL' }, search_metadata: { google_flights_url: twoAdultLink }, best_flights: [{ price: 9120, flights: [{ departure_airport: { id: 'GRU', time: '2027-03-10 17:45' }, arrival_airport: { id: 'MXP' } }] }] });
+    });
+    const found = await explore('flight', { ...query, adults: 2, arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined });
+    expect(found.offers).toHaveLength(1);
+    expect(found.offers[0]).toMatchObject({ price: 912000, passengers: 2, passengerValidation: 'source-verified', url: twoAdultLink });
+    expect(found.coverage.queries).toBe(2); expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(found.offers)).not.toContain('430300');
+  });
+
+  it('rejects conflicting passengers in a public link even if the response echoes the requested two adults', async () => {
+    vi.mocked(fetch).mockResolvedValue(response({ ...fixedData, search_parameters: { adults: 2 }, search_metadata: { google_flights_url: 'https://www.google.com/travel/flights?tfs=QAE' } }));
+    await expect(explore('flight', { ...query, adults: 2 })).rejects.toMatchObject({ code: 'PROVIDER_PASSENGER_MISMATCH' });
+  });
+
+  it('omits a group shortcut when the public URL does not prove its passengers', async () => {
+    vi.mocked(fetch).mockResolvedValue(response({ ...fixedData, search_parameters: { adults: 2 } }));
+    const found = await explore('flight', { ...query, adults: 2 });
+    expect(found.offers[0].url).toBeUndefined();
+    for (const value of ['https://www.google.com/travel/flights?tfs=!!!!', 'https://elsewhere.example/?tfs=QgIBAQ', 'https://www.google.com/travel/flights?tfs=Qv8']) expect(linkedAdults(value)).toBeUndefined();
   });
 
   it('rejects an incompatible airport radius before consuming a provider request', async () => {
@@ -235,7 +274,7 @@ describe('real price provider adapter', () => {
     vi.mocked(fetch).mockImplementation(async input => {
       const params = new URL(String(input)).searchParams;
       if (params.get('engine') === 'google_flights_deals') return response({ deals: [], search_parameters: { currency: 'BRL' } });
-      return response({ search_parameters: { currency: 'BRL' }, best_flights: [{ price: 4200, flights: [{ departure_airport: { id: params.get('departure_id'), time: params.get('outbound_date') + ' 18:00' }, arrival_airport: { id: params.get('arrival_id') } }] }] });
+      return response({ search_parameters: { currency: 'BRL', adults: Number(params.get('adults')) }, best_flights: [{ price: 4200, flights: [{ departure_airport: { id: params.get('departure_id'), time: params.get('outbound_date') + ' 18:00' }, arrival_airport: { id: params.get('arrival_id') } }] }] });
     });
     const result = await explore('flight', { ...query, origin: 'GYN', adults: 2, arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined });
     expect(result.offers).toHaveLength(3);
@@ -307,7 +346,11 @@ describe('date and airport restrictions reach the flight source', () => {
   const weekend: FlightQuery = { origin: 'GYN', destination: 'Europa', minDays: 2, maxDays: 2, adults: 2, allowOpenJaw: true, horizonMonths: 12, startMonth: '2027-02', endMonth: '2027-10', departureWeekdays: [5], returnWeekdays: [0] };
   it('filters discovery dates strictly and sends the selected month range and weekdays', async () => {
     const good = { price: 1200, name: 'Paris', departure_airport_code: 'GYN', arrival_airport_code: 'CDG', start_date: '2027-02-05', end_date: '2027-02-07' };
-    vi.mocked(fetch).mockResolvedValue(response({ deals: [good, { ...good, start_date: '2027-02-08', end_date: '2027-02-10' }, { ...good, start_date: '2027-11-05', end_date: '2027-11-07' }] }));
+    vi.mocked(fetch).mockImplementation(async input => {
+      const params = new URL(String(input)).searchParams;
+      if (params.get('engine') === 'google_flights_deals') return response({ deals: [good, { ...good, start_date: '2027-02-08', end_date: '2027-02-10' }, { ...good, start_date: '2027-11-05', end_date: '2027-11-07' }] });
+      return response({ search_parameters: { adults: 2, currency: 'BRL' }, best_flights: [{ price: 2400, flights: [{ departure_airport: { id: 'GYN', time: params.get('outbound_date') + ' 09:00' }, arrival_airport: { id: 'CDG' } }] }] });
+    });
     const found = await explore('flight', weekend);
     expect(found.offers).toHaveLength(1); expect(found.offers[0]).toMatchObject({ outboundDate: '2027-02-05', returnDate: '2027-02-07', passengers: 2 });
     const params = new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams;
@@ -317,7 +360,7 @@ describe('date and airport restrictions reach the flight source', () => {
   it('samples only Friday to Sunday pairs with both selected airports, including an exit-only choice', async () => {
     vi.mocked(fetch).mockImplementation(async input => {
       const params = new URL(String(input)).searchParams; const legs = JSON.parse(params.get('multi_city_json')!);
-      return response({ best_flights: [{ price: 1200, flights: [{ departure_airport: { id: 'GYN', time: `${legs[0].date} 09:00` }, arrival_airport: { id: legs[0].arrival_id } }] }] });
+      return response({ search_parameters: { currency: 'BRL', adults: Number(params.get('adults')) }, best_flights: [{ price: 1200, flights: [{ departure_airport: { id: 'GYN', time: `${legs[0].date} 09:00` }, arrival_airport: { id: legs[0].arrival_id } }] }] });
     });
     const results = await explore('flight', { ...weekend, arrivalAirport: 'CDG', departureAirport: 'AMS' });
     expect(results.offers).toHaveLength(3);

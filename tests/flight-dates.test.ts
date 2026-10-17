@@ -46,4 +46,11 @@ describe('travel dates and stored preferences', () => {
   it('names MXP for the city it serves, without requiring airport code knowledge', () => {
     expect(shortAirportLabel('MXP')).toBe('Milão–Malpensa (MXP)')
   })
+  it('keeps the Friday–Sunday preset at two days and preserves longer weekly trips as custom settings', () => {
+    const draft = flightDraftFromQuery(query)
+    expect(flightQueryFromDraft({ ...draft, minDays: '10', maxDays: '20', departureWeekdays: [1], returnWeekdays: [2] })).toMatchObject({ minDays: 2, maxDays: 2, departureWeekdays: [5], returnWeekdays: [0] })
+    const longer = { ...query, minDays: 9, maxDays: 9 }
+    expect(flightDraftFromQuery(longer).weekdayMode).toBe('custom')
+    expect(flightQueryFromDraft(flightDraftFromQuery(longer))).toEqual(longer)
+  })
 })

@@ -193,7 +193,7 @@ describe('notification acceptance and stable deduplication', () => {
 describe('editing saved alerts with separate price histories', () => {
   it('preserves identity and observations, retains history for a rename, and starts a new comparison after criteria change', async () => {
     const { storage } = await storageFixture();
-    const handler = createApiHandler({ storage, password: 'senha-segura-do-painel', search: async () => ({ offers: [offer({ price: 50000, passengers: 2 })], coverage: { complete: true, description: 'Controlled test', queries: 1 }, warnings: [] }) }); const cookie = await login(handler);
+    const handler = createApiHandler({ storage, password: 'senha-segura-do-painel', search: async () => ({ offers: [offer({ price: 50000, passengers: 2, passengerValidation: 'source-verified' })], coverage: { complete: true, description: 'Controlled test', queries: 1 }, warnings: [] }) }); const cookie = await login(handler);
     const created = await (await handler(request('/api/monitors', 'POST', input, cookie))).json();
     const monitor = created.monitor as Monitor;
     const observedAt = new Date(Date.now() - 86_400_000).toISOString();
@@ -204,7 +204,7 @@ describe('editing saved alerts with separate price histories', () => {
     expect(changed).toMatchObject({ criteriaChanged: true, monitor: { id: monitor.id, criteriaVersion: 1 }, summary: { latest: null, baseline: { validDays: 0, mean: null } } });
     expect(await storage.listObservations(monitor.id)).toHaveLength(1);
     const updatedRun = await (await handler(request(`/api/monitors/${monitor.id}/run`, 'POST', undefined, cookie))).json();
-    expect(updatedRun.summary).toMatchObject({ baseline: { mean: null, validDays: 0 }, latest: { price: 50000, passengers: 2 } });
+    expect(updatedRun.summary).toMatchObject({ baseline: { mean: null, validDays: 0 }, latest: { price: 50000, passengers: 2, passengerValidation: 'source-verified' } });
     expect((await storage.listObservations(monitor.id)).find(observation => observation.criteriaVersion === 1)).toMatchObject({ price: 50000 });
 
     expect((await handler(request(`/api/monitors/${monitor.id}`, 'PUT', { ...monitor, query: { ...monitor.query, adults: 0 } }, cookie))).status).toBe(400);

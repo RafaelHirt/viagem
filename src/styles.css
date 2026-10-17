@@ -6,7 +6,7 @@
   font-weight: 400;
   --green: #176b56;
   --green-dark: #103f39;
-  --muted: #7a8780;
+  --muted: #53665d;
   --border: #e6eae4;
   --cream: #f5f2e5;
   --radius: 14px;
@@ -4766,3 +4766,67 @@ main {
 .history-fare small { font-size: 11px; line-height: 1.6; color: #7d8e72; }
 .compact-monitor > div small { max-width: 230px; line-height: 1.6; white-space: normal; }
 @media (max-width: 600px) { .history-row { flex-wrap: wrap; } .history-fare { width: 100%; max-width: none; text-align: left; padding-left: 20px; } }
+
+/* Shared reading scale for the primary search and saved-trip tasks. */
+body { font-size: 15px; line-height: 1.5; }
+.page-heading h1 { font-size: clamp(27px, 3vw, 34px); letter-spacing: -.8px; color: #203b31; }
+.page-heading p, .section-heading p { font-size: 15px; color: #53665d; line-height: 1.65; }
+.eyebrow, .page-heading .eyebrow { color: #53665d; font-size: 11px; letter-spacing: 1.3px; }
+.nav-link { font-size: 14px; }
+.breadcrumb { font-size: 13px; color: #53665d; }
+.button, .button-small, .text-button, .alert-view-tabs button { font-size: 14px; min-height: 44px; }
+.button-primary { background: #176b56; color: #fff; }
+.field > span, .field-label, .query-wizard .field > span { font-size: 14px; color: #344f42; }
+.field input, .field select, .query-wizard .field input, .query-wizard .field select { min-height: 48px; font-size: 16px; color: #243d32; border-color: #b9c8bf; }
+input::placeholder { color: #607268; opacity: 1; }
+.field small, .wizard-hint, .query-wizard .field small, .query-wizard .inline-note, .same-airport-note, .flight-airports .checkbox-label { font-size: 13px; color: #53665d; line-height: 1.65; }
+.wizard-heading { font-size: 20px; color: #203b31; }
+.wizard-stepper button { font-size: 13px; }
+.destination-modes button, .kind-switch button, .wizard-kind-row .kind-switch button { font-size: 14px; min-height: 44px; }
+.autocomplete-options strong { font-size: 14px; }
+.autocomplete-options small { font-size: 13px; color: #53665d; }
+.query-review dt, .query-review dd { font-size: 14px; color: #344f42; }
+.inline-note, .error-message, .search-explanation, .offer-conditions, .search-results-note, .monitor-secondary { font-size: 13px; line-height: 1.7; }
+.inline-note, .search-explanation, .offer-conditions, .search-results-note, .monitor-secondary { color: #53665d; }
+.search-recap p, .monitor-description, .offer-airline { font-size: 14px; color: #53665d; }
+.search-recap { align-items: center; }
+.results-section { max-width: 1080px; }
+.offer-card h3, .monitor-card h2 { font-size: 20px; color: #203b31; }
+.fare-amount > strong { font-size: 29px; color: #155e49; font-variant-numeric: tabular-nums; }
+.fare-amount .price-label, .monitor-price .price-label, .fare-amount > small, .monitor-price small { font-size: 13px; color: #53665d; }
+.flight-facts p { font-size: 14px; color: #344f42; }
+.flight-facts > small, .last-query { font-size: 13px; color: #53665d; }
+.monitor-card-actions .button-small, .monitor-card-actions .text-button, .filter-tabs button { font-size: 14px; min-height: 44px; }
+.status-pill { color: #536549; font-size: 12px; }
+.fare-recheck > strong { font-size: 21px; color: #43594c; }
+.save-alert-panel { margin: 24px 0; padding: 26px; border: 1px solid #9cbaa5; }
+.save-alert-panel .section-heading { align-items: flex-start; }
+.save-alert-panel .form-actions { justify-content: flex-end; gap: 12px; }
+.alert-fields { display: grid; gap: 22px; margin: 24px 0; max-width: 700px; }
+.alert-fields .advanced-fields { margin-top: 0; }
+.alert-fields .advanced-fields .field-grid { margin-top: 18px; }
+.alert-fields .inline-note { margin: 0; }
+.notification-preferences { display: flex; align-items: flex-start; gap: 20px; padding: 26px; margin-bottom: 24px; color: #176b56; }
+.notification-preferences p { margin-top: 10px; color: #53665d; font-size: 14px; }
+.notification-preferences .text-button { margin-top: 12px; }
+.admin-settings > summary { cursor: pointer; padding: 18px 0; font-weight: 600; color: #344f42; }
+.admin-settings > p { color: #53665d; font-size: 14px; margin: 0 0 24px; }
+.login-card p, .login-card .field > span, .login-card form > .button, .login-footer { font-size: 14px; color: #53665d; }
+.login-card .field input { font-size: 16px; }
+.login-card form > .button { color: #fff; min-height: 48px; }
+@media(max-width:600px) {
+  .wizard-stepper button { font-size: 12px; }
+  .wizard-kind-row .kind-switch button { font-size: 13px; }
+  .save-alert-panel { padding: 20px; }
+  .save-alert-panel .form-actions { flex-wrap: wrap; }
+  .save-alert-panel .form-actions .button { flex: 1; }
+  .search-recap { align-items: stretch; }
+  .fare-amount > strong { font-size: 27px; }
+  .notification-preferences { padding: 20px; gap: 14px; }
+}
+.query-wizard .button, .query-wizard .wizard-actions .button { font-size: 14px; }
+.advanced-fields summary { font-size: 14px; color: #53665d; }
+.autocomplete-field > label { font-size: 14px; color: #344f42; }
+.alert-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); max-width: none; }
+.alert-fields > .inline-note, .alert-fields > details { grid-column: 1 / -1; }
+@media(max-width:700px) { .alert-fields { grid-template-columns: 1fr; } }

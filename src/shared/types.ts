@@ -117,6 +117,8 @@ export interface Offer {
   price: number
   currency: 'BRL'
   passengers?: number
+  /** Checked against the source response, rather than copied from the form. */
+  passengerValidation?: 'source-verified'
   priceBasis?: 'per-person' | 'group-total' | 'unknown'
   itineraryStatus?: 'outbound-only' | 'round-trip-dates' | 'complete'
   flightLegs?: FlightLeg[]

@@ -168,3 +168,16 @@ A descoberta recebe a janela e os dias no texto da consulta, mas sua interpreta�
 MXP aparece como Milão–Malpensa, em vez da municipalidade Ferno, sem mudar suas coordenadas ou identidade. A base individual/total do preço e a seleção completa de retorno seguem não confirmadas; estas melhorias não validam automaticamente a tarifa real.
 
 Verificação local: 106 testes passaram. O navegador exercitou criação e edição persistentes na API, meses, sexta–domingo, dois aeroportos, partida fixa ao ampliar o raio, duração em datas exatas, validação de preferências impossíveis e telas de 390 a 1440px. A ausência de chave neste cloud retornou erro explícito; nenhuma tarifa autenticada foi validada nesta preparação.
+
+
+## Correção da quantidade de passageiros e busca unificada
+
+A captura de Milão enviada pelo usuário mostra uma divergência concreta: o alerta informava 2 adultos e o Google abria com 1. O adaptador anterior copiava query.adults para o resultado da descoberta sem conferir o grupo. Isso não comprova que R$4.303 era o preço do casal. A diferença de Paris (R$10.298 versus valores menores no Google para 2) exige comparar o mesmo voo/horário/retorno e o momento da consulta; não foi comprovada uma causa única.
+
+A correção usa promoções somente como indicação de rota/data para grupos e cota até três combinações novamente no Google Flights. Os adultos precisam ser comprovados por search_parameters.adults ou pela lista de passageiros do link público. Uma lista divergente no link invalida a cotação mesmo com echo correto. Links sem comprovação do grupo são omitidos. O leitor de tfs apenas verifica as variantes pública compactada e repetida da lista; não cria nem reescreve links. Mudanças de formato deixam de fornecer evidência, em vez de fabricar confirmação. Preços antigos sem passengerValidation pedem reconsulta e ficam fora da referência.
+
+A busca exata usa deep_search=true, recomendado na documentação pública para aproximar a consulta da página do Google, com maior latência. Isso não garante imutabilidade da tarifa e não conclui a seleção do retorno. priceBasis permanece unknown e confirmed=false: nenhuma multiplicação por adultos nem alerta de tarifa confirmada é autorizado por esses metadados.
+
+Buscar viagem substitui os dois cadastros independentes. A criação do alerta usa a cópia imutável do pedido e, enquanto disponível, o resultado guardado no job do servidor. Alterar outro formulário não muda adultos/datas do resultado anterior. O e-mail de destino é preenchido nesse cadastro; integrações do operador ficam recolhidas. Meses inicial/final usam seletores legíveis; sexta–domingo fixa dois dias e esconde duração mínima/máxima. Viagens de nove dias com os mesmos dias da semana continuam personalizadas.
+
+Validação: 117 testes automatizados, build e percursos locais no navegador. A QA percorreu busca, job, persistência, reaproveitamento sem consulta adicional, edição sem trocar passageiros, histórico legado e configuração recolhida. As tarifas eram fixtures explícitas em API local isolada; não equivalem à conferência da conta SerpApi. O site público novo e seu status respondem HTTP200; continua exigida sessão pessoal para buscar. Nenhuma credencial foi recuperada do Netlify e nenhuma notificação real foi enviada.

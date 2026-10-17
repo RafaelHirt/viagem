@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatFlightDuration, presentFare, presentFlightFacts } from '../src/shared/fare-presentation.ts'
+import { formatFlightDuration, needsPassengerRecheck, presentFare, presentFlightFacts } from '../src/shared/fare-presentation.ts'
 import type { Offer } from '../src/shared/types.ts'
 
 const offer: Offer = {
@@ -9,6 +9,12 @@ const offer: Offer = {
 }
 
 describe('fare presentation', () => {
+  it('requires rechecking legacy group fares and rejects a verified fare for a different group size', () => {
+    expect(needsPassengerRecheck({ ...offer, passengers: 2 }, 2)).toBe(true)
+    expect(needsPassengerRecheck({ ...offer, passengers: 2, passengerValidation: 'source-verified' }, 2)).toBe(false)
+    expect(needsPassengerRecheck({ ...offer, passengers: 1, passengerValidation: 'source-verified' }, 2)).toBe(true)
+    expect(needsPassengerRecheck({ ...offer, passengers: 2, passengerValidation: 'source-verified' }, 1)).toBe(true)
+  })
   it('does not turn a legacy price into a group total or per-person fare', () => {
     const result = presentFare(offer, 2)
     expect(result).toMatchObject({

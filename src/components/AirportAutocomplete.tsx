@@ -33,6 +33,6 @@ export default function AirportAutocomplete({ value, onChange, label, placeholde
         {!options.length && <li className="autocomplete-empty">{text.trim() ? 'Nenhum aeroporto encontrado no catálogo. Tente uma cidade próxima.' : 'Comece a digitar uma cidade ou nome de aeroporto.'}</li>}
       </ul>}
     </div>
-    <small>{value && findAirport(value) ? 'Aeroporto selecionado. Você não precisa saber o código.' : 'Digite uma cidade ou nome e selecione um aeroporto da lista.'}</small>
+    {!(value && findAirport(value)) && <small>Digite uma cidade e selecione um aeroporto da lista.</small>}
   </div>;
 }

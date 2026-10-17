@@ -27,7 +27,7 @@ Preencha valores apenas nas variáveis de ambiente do Netlify, disponíveis às 
 | Variável | Finalidade |
 | --- | --- |
 | `DASHBOARD_PASSWORD` | Senha privada de acesso, pelo menos 12 caracteres no deploy. Obrigatória para operações privadas. |
-| `SERPAPI_API_KEY` | Consultar passagens reais. Conta e chave devem ser criadas e fornecidas pelo usuário. |
+| `SERPAPI_API_KEY` | Consultar passagens reais. Conta, chave e cota são geridas pelo responsável pela instalação, sem exigir uma conta SerpApi de cada futuro passageiro. |
 | `BOOKING_API_TOKEN`, `BOOKING_AFFILIATE_ID` | Nomes reservados para incorporar a conexão Booking já definida. O adaptador de hotéis está pendente neste checkout; preencher esses valores sozinho não o implementa. |
 | `BOOKING_HOTEL_CATALOG_PATH` | Desenvolvimento: caminho de um catálogo privado importado legitimamente da Booking. No Netlify, a pesquisa pode ler o store privado `viagem-booking-catalog`, chave `index.json`. Sem índice, a lista permanece indisponível. Ver [hotéis](HOTEIS.md). |
 | `ENABLE_SCHEDULED_COLLECTION` | `true` para habilitar a coleta programada depois da validação; ausente ou `false` a mantém desligada. |
@@ -65,4 +65,13 @@ O deploy deve incluir `netlify/functions/search-background.ts`. O sufixo `-backg
 
 O store privado `viagem-search-jobs-v1` usa leitura forte e gravação condicional para impedir execução duplicada. Jobs ficam acessíveis por dez minutos; essa expiração lógica não é uma política de exclusão física dos blobs. Não exige variável de acesso nova. Autenticação, Blobs, publicação do worker e uma busca real autenticada precisam ser conferidos no deploy antes de anunciar o serviço operacional.
 
-Validação local desta atualização: 106 testes automatizados passaram e o build TypeScript/Vite passou. O navegador verificou login, criação persistente, primeira consulta em segundo plano, preservação do alerta após falha, preços sem base presumida, rota/datas/duração, larguras de 390 a 1440 px, arraste da bolha e redimensionamento pela borda com mouse e toque. Ofertas de QA eram respostas simuladas somente no navegador; nenhuma tarifa real da conta foi confirmada nesta máquina, pois `SERPAPI_API_KEY` ainda não está vinculada ao ambiente cloud.
+Validação local desta atualização: 117 testes automatizados passaram e o build TypeScript/Vite passou. O navegador verificou login, criação persistente, primeira consulta em segundo plano, preservação do alerta após falha, preços sem base presumida, rota/datas/duração, larguras de 390 a 1440 px, arraste da bolha e redimensionamento pela borda com mouse e toque. Ofertas de QA são respostas controladas no navegador ou em uma API local isolada com adaptador injetado; nenhuma tarifa real da conta foi confirmada nesta máquina, pois `SERPAPI_API_KEY` ainda não está vinculada ao ambiente cloud.
+
+
+## Busca única e validação dos passageiros
+
+O menu inicial é Buscar viagem. Criar alerta desta busca abre somente nome, e-mail de destino e regras opcionais. Meus alertas contém consultas salvas e edição. As conexões técnicas ficam recolhidas em Administração da ferramenta; o usuário informa o e-mail dentro do produto, sem criar conta em um serviço de envio. O acesso permanece pessoal por senha; contas públicas/Google não foram habilitadas.
+
+Na criação, sourceSearchJobId permite reaproveitar um resultado concluído que ainda esteja no store privado (10 minutos). A API compara os critérios validados e copia o menor preço elegível do resultado do servidor. Não aceita preço enviado pelo navegador. A observação inicial permanece incompleta, fora da média e sem notificação; salvar não dispara outra busca quando o preço foi reaproveitado. Se o job expirou ou não trouxe preço, o cadastro é preservado e uma nova consulta pode ser necessária.
+
+A busca flexível para mais de um adulto usa a promoção apenas como indicação de rota/datas e faz nova cotação com google_flights e deep_search=true. É necessário comprovar os adultos na resposta ou no link da fonte; divergência é falha, não tarifa zero. Links Google que comprovam um adulto são recusados para dois. Links sem passageiros verificáveis são omitidos em buscas de grupo. Não se alteram parâmetros opacos de um link nem se multiplica a tarifa antiga para inventar um total. A chave configurada no Netlify continua separada do ambiente de testes.

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { ExploreResult, FlightQuery, HotelQuery, Monitor, MonitorSummary, Observation, Status } from '../src/shared/types.ts';
+import type { ExploreResult, FlightQuery, HotelQuery, Monitor, MonitorSummary, Observation, Offer, Status } from '../src/shared/types.ts';
+import { needsPassengerRecheck } from '../src/shared/fare-presentation.ts';
 import { getBaseline, getPriceDrop, validateMonitor } from '../src/shared/domain.ts';
 import { clearSessionCookie, createLoginLimiter, createSessionCookie, hasSession, isSameOrigin, passwordMatches } from './auth.ts';
 import { explore, getProviderStatus, ProviderError } from './providers.ts';
@@ -64,7 +65,7 @@ function minimumHistoryDays(): number {
 export async function summarizeMonitor(storage: Storage, monitor: Monitor): Promise<MonitorSummary> {
   const observations = (await storage.listObservations(monitor.id)).filter(observation => (observation.criteriaVersion ?? 0) === (monitor.criteriaVersion ?? 0));
   const latest = observations.sort((first, second) => second.observedAt.localeCompare(first.observedAt))[0] ?? null;
-  const comparable = latest ? observations.filter((observation) => observation.offer.provider === latest.offer.provider) : observations;
+  const comparable = observations.filter(observation => !needsPassengerRecheck(observation.offer, monitor.query.adults) && (!latest || observation.offer.provider === latest.offer.provider));
   const baseline = getBaseline(comparable, monitor.rule.windowDays);
   return {
     monitor,
@@ -97,9 +98,11 @@ interface RunResult {
 
 async function runMonitor(storage: Storage, monitor: Monitor, search: typeof explore, notify: typeof sendNotifications, searchOptions?: { budgetMs?: number }): Promise<RunResult> {
   const result = await search(monitor.kind, monitor.query, searchOptions);
-  const offer = result.offers.filter((candidate) => candidate.kind === monitor.kind && candidate.currency === 'BRL' && Number.isSafeInteger(candidate.price) && candidate.price > 0)
+  const validOffers = result.offers.filter((candidate) => candidate.kind === monitor.kind && candidate.currency === 'BRL' && Number.isSafeInteger(candidate.price) && candidate.price > 0 && !needsPassengerRecheck(candidate, monitor.query.adults));
+  if (result.offers.length && !validOffers.length) throw new ProviderError('PROVIDER_PASSENGER_MISMATCH', 'A fonte não confirmou a quantidade de adultos. Nenhum preço foi salvo. Faça uma nova consulta.', 502);
+  const offer = validOffers
     .sort((first, second) => first.price - second.price)[0];
-  const observations = (await storage.listObservations(monitor.id)).filter(observation => (observation.criteriaVersion ?? 0) === (monitor.criteriaVersion ?? 0));
+  const observations = (await storage.listObservations(monitor.id)).filter(observation => (observation.criteriaVersion ?? 0) === (monitor.criteriaVersion ?? 0) && !needsPassengerRecheck(observation.offer, monitor.query.adults));
   const baseline = getBaseline(offer ? observations.filter((observation) => observation.offer.provider === offer.provider) : observations, monitor.rule.windowDays);
   const warnings = [...result.warnings];
   let deliveries: Delivery[] = [];
@@ -119,7 +122,7 @@ async function runMonitor(storage: Storage, monitor: Monitor, search: typeof exp
       warnings.push(`Alertas aguardam pelo menos ${minimumHistoryDays()} dias históricos válidos. Há ${baseline.validDays} dias disponíveis.`);
     }
   }
-  return { summary: await summarizeMonitor(storage, monitor), coverage: result.coverage, warnings, notifications: deliveries, found: result.offers.length, message: result.search?.message };
+  return { summary: await summarizeMonitor(storage, monitor), coverage: result.coverage, warnings, notifications: deliveries, found: validOffers.length, message: result.search?.message };
 }
 
 export function createApiHandler(options: ApiOptions): (request: Request) => Promise<Response> {
@@ -226,6 +229,21 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
       if (path === '/api/monitors' && method === 'POST') {
         const body = await bodyOf(request);
         const monitor = validated({ ...body, id: randomUUID(), createdAt: new Date().toISOString(), enabled: body.enabled ?? true, criteriaVersion: 0 });
+        // Reuse only a server-held completed search with identical validated
+        // criteria. Browser-supplied prices are never trusted or persisted.
+        let seed: Offer | undefined;
+        if (body.sourceSearchJobId !== undefined) {
+          if (typeof body.sourceSearchJobId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.sourceSearchJobId)) throw new HttpError(400, 'A busca de origem é inválida.');
+          const source = await jobs().get(body.sourceSearchJobId);
+          if (source) {
+            if (source.status !== 'complete' || 'monitorId' in source.payload || source.payload.kind !== monitor.kind) throw new HttpError(400, 'Conclua a busca antes de criar o alerta.');
+            const original = validated({ ...monitor, query: source.payload.query });
+            if (JSON.stringify(original.query) !== JSON.stringify(monitor.query)) throw new HttpError(400, 'As preferências mudaram. Faça uma nova busca antes de criar o alerta.');
+            const result = source.result as ExploreResult;
+            seed = result.offers.filter(candidate => candidate.kind === monitor.kind && candidate.currency === 'BRL' && Number.isSafeInteger(candidate.price) && candidate.price > 0 &&
+              (monitor.kind !== 'flight' || (candidate.passengerValidation === 'source-verified' && candidate.passengers === monitor.query.adults))).sort((a, b) => a.price - b.price)[0];
+          }
+        }
         const monitors = monitor.kind === 'hotel' && (monitor.query as HotelQuery).pattern === 'both'
           ? (['weekend', 'weekdays'] as const).map((pattern, index) => ({
             ...monitor, id: index === 0 ? monitor.id : randomUUID(),
@@ -234,7 +252,9 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
           })) : [monitor];
         if ((await storage.listMonitors()).length + monitors.length > MAX_MONITORS) throw new HttpError(409, `O painel pessoal permite até ${MAX_MONITORS} monitores. A opção "ambos" usa dois históricos separados.`);
         for (const entry of monitors) await storage.saveMonitor(entry);
-        return json({ monitor: monitors[0], summary: await summarizeMonitor(storage, monitors[0]), additionalMonitors: monitors.slice(1) }, 201);
+        if (seed) await storage.saveObservation({ id: randomUUID(), monitorId: monitor.id, observedAt: seed.observedAt,
+          price: seed.price, currency: 'BRL', offer: seed, complete: false, criteriaVersion: 0 });
+        return json({ monitor: monitors[0], seeded: Boolean(seed), summary: await summarizeMonitor(storage, monitors[0]), additionalMonitors: monitors.slice(1) }, 201);
       }
       if (path === '/api/explore' && method === 'POST') {
         const body = await bodyOf(request);

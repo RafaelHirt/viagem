@@ -4,6 +4,7 @@ import { findAirport, haversineKm } from '../src/shared/domain';
 import { AIRPORTS, isAirportInArea, matchesRegion, REGIONS, searchAirports } from '../src/shared/airports.ts';
 import { airportInTrip, countriesInAreas, previewTrip } from '../src/shared/trip-planner.ts';
 import { flightWindow, matchesTravelDates, sampleTravelDates } from '../src/shared/flight-dates.ts';
+import { linkedAdults } from './flight-passengers.ts';
 
 /** Only safe, user-facing messages cross the API boundary. */
 export class ProviderError extends Error {
@@ -124,6 +125,16 @@ function verifyCurrency(data: Json): void {
   if (currency && currency !== 'BRL') throw new ProviderError('PROVIDER_INVALID_CURRENCY', 'A fonte retornou outra moeda. O preço não foi convertido nem salvo como reais.', 502);
 }
 
+function verifyPassengers(data: Json, adults: number): void {
+  const echoed = record(data.search_parameters).adults;
+  const returned = echoed === undefined ? undefined : Number(echoed);
+  const linked = linkedAdults(string(record(data.search_metadata).google_flights_url));
+  if ((returned !== undefined && returned !== adults) || (linked !== undefined && linked !== adults) ||
+      (adults > 1 && returned === undefined && linked === undefined)) {
+    throw new ProviderError('PROVIDER_PASSENGER_MISMATCH', 'Não foi possível confirmar o preço para a quantidade de adultos escolhida. O valor não foi exibido nem salvo. Tente consultar uma cidade com datas definidas.', 502);
+  }
+}
+
 function enforceDistance(query: FlightQuery): number | undefined {
   const entry = query.arrivalAirport;
   const exit = query.departureAirport;
@@ -165,7 +176,10 @@ function exactEntry(query: FlightQuery): string | undefined {
 
 function normalizeExact(data: Json, query: FlightQuery, entry: string): Offer[] {
   const observedAt = new Date().toISOString();
-  const url = httpsLink(record(data.search_metadata).google_flights_url);
+  const sourceUrl = httpsLink(record(data.search_metadata).google_flights_url);
+  // Links without a verifiable passenger list can reopen with Google's default
+  // of one adult. Do not offer that shortcut for a group search.
+  const url = query.adults === 1 || linkedAdults(sourceUrl) === query.adults ? sourceUrl : undefined;
   return [...array(data.best_flights), ...array(data.other_flights)].flatMap((value): Offer[] => {
     const candidate = record(value);
     const segments = array(candidate.flights).map(record);
@@ -182,7 +196,7 @@ function normalizeExact(data: Json, query: FlightQuery, entry: string): Offer[] 
     const extensions = array(candidate.extensions).filter((item): item is string => typeof item === 'string').slice(0, 8);
     return [{
       id: randomUUID(), kind: 'flight', title: `${findAirport(query.origin)?.city.split(' (')[0] || query.origin} → ${findAirport(entry)?.city.split(' (')[0] || entry}`, price, currency: 'BRL',
-      passengers: query.adults, priceBasis: 'unknown', itineraryStatus: 'outbound-only',
+      passengers: query.adults, passengerValidation: 'source-verified', priceBasis: 'unknown', itineraryStatus: 'outbound-only',
       flightLegs: [{ direction: 'outbound', segments: flightSegments(segments), durationMinutes: positive(candidate.total_duration), stops: Math.max(0, segments.length - 1) }],
       outboundDate: query.departureDate, returnDate: query.returnDate, origin: actualOrigin,
       arrivalAirport: actualArrival, departureAirport: query.departureAirport || entry,
@@ -241,8 +255,9 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
         { departure_id: exit, arrival_id: query.origin, date: query.returnDate },
       ]),
     } : { ...base, engine: 'google_flights', type: '1', departure_id: query.origin, arrival_id: entry, outbound_date: query.departureDate, return_date: query.returnDate };
-    const data = await requestSerpApi(parameters, budget, fallback ? FALLBACK_TIMEOUT_MS : EXACT_TIMEOUT_MS);
+    const data = await requestSerpApi({ ...parameters, deep_search: 'true' }, budget, fallback ? FALLBACK_TIMEOUT_MS : EXACT_TIMEOUT_MS);
     verifyCurrency(data);
+    verifyPassengers(data, query.adults);
     if (!Array.isArray(data.best_flights) && !Array.isArray(data.other_flights)) throw new ProviderError('PROVIDER_INVALID_RESPONSE', 'Não conseguimos ler os preços retornados. Tente novamente em alguns minutos.', 502);
     const offers = addTripPreviews(normalizeExact(data, query, entry), query);
     if (!offers.length) warnings.push('Nenhuma oferta válida retornou para os aeroportos e datas informados. Isso não prova ausência de tarifas em outras fontes.');
@@ -263,6 +278,7 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
       data = await requestSerpApi({ ...base, engine: 'google_flights_deals', type: '1', departure_id: query.origin,
         outbound_date: `${startDate},${endDate}`, query: discoveryText(query) }, budget, DISCOVERY_TIMEOUT_MS);
       verifyCurrency(data);
+      if (query.adults === 1) verifyPassengers(data, 1);
       if (!Array.isArray(data.deals)) throw new ProviderError('PROVIDER_INVALID_RESPONSE', 'A busca retornou uma resposta que não conseguimos interpretar. Tente novamente ou consulte uma cidade com datas definidas.', 502);
     } catch (error) {
       // Trying another engine cannot repair an invalid credential, depleted
@@ -283,17 +299,24 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
     const airport = string(deal.arrival_airport_code).toUpperCase();
     if (price === undefined || !outboundDate || !returnDate || outboundDate < startDate || outboundDate > endDate || !Number.isInteger(duration) || !matchesTravelDates(query, outboundDate, returnDate) || string(deal.departure_airport_code).toUpperCase() !== query.origin || !/^[A-Z]{3}$/.test(airport) || !matchesDestination(deal, query)) { discarded++; return []; }
     return [{ id: randomUUID(), kind: 'flight', title: `${findAirport(query.origin)?.city.split(' (')[0] || query.origin} → ${string(deal.name) || findAirport(airport)?.city || airport}`, price, currency: 'BRL',
-      passengers: query.adults, priceBasis: 'unknown', itineraryStatus: 'round-trip-dates',
+      passengers: 1, ...(query.adults === 1 ? { passengerValidation: 'source-verified' as const } : {}), priceBasis: 'unknown', itineraryStatus: 'round-trip-dates',
       flightLegs: [{ direction: 'outbound', segments: [], durationMinutes: positive(deal.flight_duration), stops: nonnegativeInteger(deal.stops) }],
       outboundDate, returnDate, origin: query.origin, arrivalAirport: airport, departureAirport: airport,
       airline: string(deal.airline) || undefined, url: httpsLink(deal.flight_link), details: [`${duration} dias`, `${query.adults} adulto(s) na pesquisa`, 'Chegada e saída pelo mesmo aeroporto; tarifa ainda não confirmada'],
       observedAt, provider: 'SerpApi · Google Flights Deals', confirmed: false }];
   }).sort((a, b) => a.price - b.price);
-  let offers = addTripPreviews(candidates, query);
+  // A discovery link may still contain one adult even when the feed accepted
+  // adults=2. Use it only to find dates/routes; never relabel its amount for a group.
+  const eligible = addTripPreviews(candidates, query);
+  let offers = query.adults > 1 ? [] : eligible.filter(candidate => {
+    const linked = linkedAdults(candidate.url);
+    return linked === undefined || linked === 1;
+  });
   let queries = fixedOpenJaw ? 0 : 1;
   let combinations = 0;
   if (!offers.length) {
-    const samples = sampleQueries(query, start, end);
+    const seeds = eligible.filter((candidate, index, all) => index === all.findIndex(other => other.arrivalAirport === candidate.arrivalAirport && other.outboundDate === candidate.outboundDate && other.returnDate === candidate.returnDate)).slice(0, 3);
+    const samples = query.adults > 1 && seeds.length ? seeds.map(candidate => ({ ...query, arrivalAirport: candidate.arrivalAirport, departureAirport: candidate.departureAirport, departureDate: candidate.outboundDate, returnDate: candidate.returnDate })) : sampleQueries(query, start, end);
     combinations = samples.length;
     const attempts = await Promise.allSettled(samples.map(sample => exploreFlight(sample, budget, true)));
     queries += samples.length;
@@ -302,13 +325,13 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
     if (!offers.length && failures.length) {
       const reasons = failures.map(result => result.reason).filter((reason): reason is ProviderError => reason instanceof ProviderError);
       const important = reasons.find(reason => ['PROVIDER_AUTH_FAILED', 'PROVIDER_QUOTA_EXCEEDED'].includes(reason.code)) ||
-        reasons.find(reason => ['PROVIDER_TIMEOUT', 'PROVIDER_NETWORK_ERROR'].includes(reason.code));
+        reasons.find(reason => ['PROVIDER_TIMEOUT', 'PROVIDER_NETWORK_ERROR', 'PROVIDER_PASSENGER_MISMATCH'].includes(reason.code));
       if (important) throw important;
       throw new ProviderError('PROVIDER_SEARCH_FAILED', 'Não conseguimos concluir a consulta de preços. Isso não significa que não existam passagens. Tente novamente em alguns minutos.', 502);
     }
     if (!offers.length && discoveryFailure && !samples.length) throw discoveryFailure;
     if (failures.length) warnings.push('Algumas combinações não puderam ser consultadas. Os preços exibidos correspondem às consultas concluídas.');
-    if (samples.length) warnings.push(discoveryFailure ? 'A seleção de promoções estava indisponível. Consultamos diretamente combinações de datas e aeroportos dentro das suas preferências.' : 'Como a seleção de promoções não trouxe opções compatíveis, consultamos combinações de datas e aeroportos dentro das suas preferências.');
+    if (samples.length) warnings.push(query.adults > 1 && seeds.length ? 'As datas da seleção de promoções foram cotadas novamente para a quantidade de adultos escolhida; o preço individual da seleção foi descartado.' : discoveryFailure ? 'A seleção de promoções estava indisponível. Consultamos diretamente combinações de datas e aeroportos dentro das suas preferências.' : 'Como a seleção de promoções não trouxe opções compatíveis, consultamos combinações de datas e aeroportos dentro das suas preferências.');
   }
   if (query.tripPlan) warnings.push('Foram avaliados no máximo os 20 candidatos aéreos mais baratos da amostra. Somente candidatos com uma prévia geográfica compatível são exibidos. Não é uma busca exaustiva de itinerários ou tarifas multicidade.');
   if (discarded) warnings.push(`${discarded} resultado(s) foram descartados por não comprovar os aeroportos, destino, moeda ou duração solicitados.`);

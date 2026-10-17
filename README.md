@@ -30,12 +30,12 @@ Consulte [Publicação e configuração](docs/DEPLOY.md) para as variáveis de f
 
 ## O que esta primeira versão faz
 
-- Separar exploração imediata e criação de alertas em formulários por etapas, tanto para passagens quanto para hotéis.
+- Buscar passagens em um único fluxo e criar um alerta a partir do resultado, sem preencher a viagem novamente. Os hotéis permanecem indisponíveis enquanto o conector não estiver pronto.
 - Encontrar aeroportos digitando cidade ou nome, escolher regiões sugeridas e marcar uma área circular no mapa, sem precisar conhecer códigos ou estimar quilômetros.
 - Planejar roteiros por dois a cinco países a partir de uma cidade escolhida, com área ajustável, países livres ou obrigatórios e faixas indicativas de tempo por trecho. A prévia geográfica não consulta rotas reais ou preços internos.
 - Explorar passagens com datas exatas ou descobrir ofertas com duração variável; apresenta a cobertura retornada, sem inventar preços.
 - Consultar itinerários com cidades de chegada e saída diferentes em datas definidas e validar a distância entre aeroportos conhecidos.
-- Criar, pausar, consultar e excluir monitores, com persistência local ou Netlify Blobs no deploy.
+- Salvar a busca concluída e seu preço no alerta sem consumir outra consulta, usando o resultado guardado no servidor; editar, pausar, consultar e excluir alertas com persistência.
 - Calcular a média dos menores preços diários anteriores, excluindo hoje, dados incompletos e dias ausentes.
 - Escolher períodos entre meses (por exemplo, fevereiro a outubro de 2027), dias de ida/volta como sexta–domingo, datas exatas e aeroportos independentes de chegada/retorno.
 - Editar alertas salvos; mudanças de viagem preservam o histórico anterior separado da nova referência.
@@ -43,9 +43,11 @@ Consulte [Publicação e configuração](docs/DEPLOY.md) para as variáveis de f
 
 ## Limites atuais
 
-A documentação e os testes do adaptador foram verificados; **a busca corrigida ainda precisa ser validada de ponta a ponta com a chave real**. A chave cadastrada no Netlify não está disponível automaticamente no ambiente cloud de desenvolvimento. A fonte tem um plano gratuito publicado de 250 consultas por mês, sujeito às condições atuais. Nenhum plano foi contratado.
+A documentação e os testes do adaptador foram verificados; **a busca corrigida ainda precisa ser validada de ponta a ponta com a chave real**. A chave cadastrada no Netlify não está disponível automaticamente no ambiente cloud de desenvolvimento. O acesso continua pessoal por decisão do usuário; cadastro público e login com Google ficam para uma etapa futura, com dados separados por conta. Futuros usuários não devem precisar de conta própria na SerpApi: a contratação, as credenciais e a cota são responsabilidade de quem opera o serviço.
 
-Os resultados de passagens desta versão são candidatos: a sequência completa de seleção do retorno e confirmação das opções de compra ainda não está implementada. Portanto não geram alertas de preço confirmado. A exploração flexível direciona o destino ao buscador de promoções e filtra os resultados pelas preferências. Sem resultados compatíveis, consulta até três combinações de datas/aeroportos; pares fixos diferentes podem usar multicidade. Continua sendo uma amostra, sem cobertura exaustiva de um ano ou de todos os pares de entrada e saída.
+A fonte tem um plano gratuito publicado de 250 consultas por mês, sujeito às condições atuais. Nenhum plano foi contratado.
+
+Os resultados de passagens desta versão são candidatos: a sequência completa de seleção do retorno e confirmação das opções de compra ainda não está implementada. Portanto não geram alertas de preço confirmado. A exploração flexível direciona o destino ao buscador de promoções e filtra os resultados pelas preferências. Sem resultados compatíveis, consulta até três combinações de datas/aeroportos; pares fixos diferentes podem usar multicidade. Para grupos, a descoberta fornece apenas aeroportos/datas: até três combinações são cotadas novamente no Google Flights com a quantidade solicitada. Respostas e links com passageiros incompatíveis são recusados, e preços antigos do grupo pedem nova consulta. A base por pessoa/total continua desconhecida até validação explícita; os valores não são multiplicados. Continua sendo uma amostra, sem cobertura exaustiva de um ano ou de todos os pares de entrada e saída.
 
 Booking permanece a fonte de hotéis escolhida pelo usuário. O autocomplete pesquisa um índice privado quando houver um catálogo real importado; sem ele, informa que o nome não foi validado e bloqueia a seleção. O acesso de parceiro, a importação do catálogo e o adaptador autenticado de preços continuam pendentes. Não existe consulta de hotel fictícia no lugar dessa integração.
 

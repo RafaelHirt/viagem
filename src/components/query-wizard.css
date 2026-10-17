@@ -2,7 +2,7 @@
 .wizard-kind-row { margin-bottom: 23px; }
 .wizard-stepper { list-style: none; display: flex; gap: 10px; margin: 0 0 30px; padding: 0 0 22px; border-bottom: 1px solid var(--border); }
 .wizard-stepper li { flex: 1; }
-.wizard-stepper button { display: flex; align-items: center; gap: 8px; padding: 3px 0; background: none; border: 0; color: #939e95; font-size: 11px; }
+.wizard-stepper button { display: flex; align-items: center; gap: 8px; padding: 3px 0; background: none; border: 0; color: #53665d; font-size: 13px; }
 .wizard-stepper button:disabled { cursor: default; opacity: .7; }
 .wizard-stepper button > span { border: 1px solid #dce3d7; border-radius: 50%; width: 25px; height: 25px; display: grid; place-items: center; flex-shrink: 0; }
 .wizard-stepper .current button { color: var(--green); font-weight: 650; }
@@ -13,63 +13,63 @@
 .wizard-content { min-width: 0; }
 .wizard-content > .field + .field { margin-top: 22px; }
 .wizard-content > .flexibility-box + .field { margin-top: 25px; max-width: 250px; }
-.wizard-content .field > label { font-size: 11px; color: #526e5e; display: block; margin-bottom: 9px; }
+.wizard-content .field > label { font-size: 13px; color: #526e5e; display: block; margin-bottom: 9px; }
 .autocomplete-wrap { position: relative; }
 .autocomplete-wrap > input { width: 100%; }
 .autocomplete-options { position: absolute; inset: calc(100% + 5px) 0 auto; z-index: 30; padding: 5px; list-style: none; margin: 0; background: #fff; border: 1px solid #dbe5d6; border-radius: 10px; box-shadow: 0 12px 35px #173e2720; max-height: 300px; overflow-y: auto; }
 .autocomplete-options li { padding: 12px; border-radius: 6px; cursor: pointer; }
 .autocomplete-options li:hover, .autocomplete-options li.active, .autocomplete-options li[aria-selected=true] { background: #eff5ea; }
 .autocomplete-options strong { display: block; font-size: 12px; color: #355c48; line-height: 1.6; }
-.autocomplete-options strong > span { font-weight: 400; color: #87947d; }
-.autocomplete-options small { display: block; color: #899280; font-size: 10px; margin-top: 3px; }
-.autocomplete-options .autocomplete-empty { color: #818b7c; font-size: 11px; line-height: 1.8; cursor: default; }
+.autocomplete-options strong > span { font-weight: 400; color: #53665d; }
+.autocomplete-options small { display: block; color: #53665d; font-size: 12px; margin-top: 3px; }
+.autocomplete-options .autocomplete-empty { color: #818b7c; font-size: 13px; line-height: 1.8; cursor: default; }
 .destination-options { margin: 25px 0 18px; }
-.field-label { color: #526e5e; font-size: 11px; display: block; margin-bottom: 11px; }
+.field-label { color: #526e5e; font-size: 13px; display: block; margin-bottom: 11px; }
 .destination-modes { display: flex; gap: 8px; flex-wrap: wrap; }
-.destination-modes button { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid #e0e7d9; padding: 10px 13px; border-radius: 8px; font-size: 11px; color: #75896d; }
+.destination-modes button { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid #e0e7d9; padding: 10px 13px; border-radius: 8px; font-size: 13px; color: #53665d; }
 .destination-modes button.selected { background: #edf4e4; border-color: #a9c79a; color: #376b3f; }
 .destination-region { max-width: 270px; margin: 0 0 16px; }
-.wizard-kind-row .kind-switch button > small { font-size: 9px; color: #8a968b; margin-left: 3px; }
+.wizard-kind-row .kind-switch button > small { font-size: 12px; color: #8a968b; margin-left: 3px; }
 .wizard-unavailable { text-align: center; padding: 44px 20px; color: #6b8275; }
 .wizard-unavailable > svg { margin: 0 auto 15px; }
 .wizard-unavailable h3 { font-size: 19px; color: #31574a; margin: 0 0 9px; }
 .wizard-unavailable p { font-size: 13px; line-height: 1.7; margin-bottom: 22px; }
 .wizard-unavailable .button { margin: 0 auto; }
-.wizard-hint { font-size: 11px; color: #8b987c; line-height: 1.85; flex-basis: 100%; margin-top: 5px; }
+.wizard-hint { font-size: 13px; color: #53665d; line-height: 1.85; flex-basis: 100%; margin-top: 5px; }
 .wizard-map > .wizard-hint { margin: 0 0 16px; }
-.map-loading { min-height: 230px; display: flex; gap: 9px; align-items: center; justify-content: center; font-size: 12px; color: #7d9270; border: 1px solid #e2e8dc; border-radius: 10px; }
+.map-loading { min-height: 230px; display: flex; gap: 9px; align-items: center; justify-content: center; font-size: 12px; color: #53665d; border: 1px solid #e2e8dc; border-radius: 10px; }
 .lookup-warning { color: #95753d !important; }
 .query-review { padding: 0; margin: 0; }
 .query-review > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 17px; padding: 16px 0; border-bottom: 1px solid #edf0e8; }
-.query-review dt { font-size: 11px; color: #8c987f; }
+.query-review dt { font-size: 13px; color: #53665d; }
 .query-review dd { font-size: 12px; color: #41634d; margin: 0; line-height: 1.8; overflow-wrap: anywhere; }
 .wizard-actions { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
 .wizard-error { margin-top: 20px; }
 .query-wizard .button:disabled { cursor: default; }
 .query-wizard .advanced-fields { margin-top: 20px; }
 @media (max-width: 600px) {
-  .wizard-kind-row .kind-switch button { font-size: 11px; padding: 10px; }
+  .wizard-kind-row .kind-switch button { font-size: 13px; padding: 10px; }
   .wizard-stepper { gap: 5px; margin-bottom: 24px; padding-bottom: 18px; }
-  .wizard-stepper button { flex-direction: column; gap: 7px; font-size: 10px; width: 100%; }
+  .wizard-stepper button { flex-direction: column; gap: 7px; font-size: 12px; width: 100%; }
   .wizard-stepper button > span { width: 26px; height: 26px; }
   .wizard-heading { font-size: 16px; line-height: 1.65; margin-bottom: 21px; }
   .query-wizard .field > span, .query-wizard .field > label { font-size: 12px; }
   .query-wizard .field input, .query-wizard .field select { font-size: 14px; min-height: 46px; }
-  .query-wizard .field small { font-size: 11px; }
+  .query-wizard .field small { font-size: 13px; }
   .query-wizard .field-grid.three { grid-template-columns: 1fr 1fr; }
   .query-wizard .flexibility-box .checkbox-label strong { font-size: 12px; }
-  .query-wizard .flexibility-box .checkbox-label small { font-size: 11px; max-width: none; }
-  .query-wizard .inline-note { font-size: 11px; }
+  .query-wizard .flexibility-box .checkbox-label small { font-size: 13px; max-width: none; }
+  .query-wizard .inline-note { font-size: 13px; }
   .query-wizard .advanced-fields summary { font-size: 12px; }
   .field-label, .wizard-hint { font-size: 12px; }
   .destination-modes { gap: 7px; }
-  .destination-modes button { font-size: 11px; padding: 11px 10px; }
+  .destination-modes button { font-size: 13px; padding: 11px 10px; }
   .wizard-kind-row .kind-switch button > small { display: none; }
   .destination-region { max-width: none; }
   .autocomplete-options strong { font-size: 13px; }
-  .autocomplete-options small { font-size: 11px; }
+  .autocomplete-options small { font-size: 13px; }
   .query-review > div { grid-template-columns: 1fr; gap: 5px; padding: 13px 0; }
-  .query-review dt { font-size: 11px; }
+  .query-review dt { font-size: 13px; }
   .query-review dd { font-size: 13px; }
   .query-wizard .wizard-actions { flex-direction: row; align-items: center; gap: 8px; }
   .query-wizard .wizard-actions .button { font-size: 12px; }
@@ -88,3 +88,9 @@
 .flight-airports .checkbox-label { font-size: 12px; margin-top: 18px; color: #60775b; }
 .same-airport-note { color: #70816a; font-size: 12px; line-height: 1.8; align-self: center; }
 @media(max-width:600px) { .weekday-options { gap: 5px; } .weekday-options button { padding: 9px 11px; } }
+
+.month-range { margin: 24px 0; }
+.month-range .field-grid { gap: 18px; }
+.weekend-summary { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; margin: 18px 0; background: #eef5ee; border-radius: 9px; color: #234b3b; font-size: 14px; line-height: 1.6; }
+.weekend-summary span { color: #53665d; }
+@media(max-width:600px) { .month-range .field-grid { grid-template-columns: 1fr; } }

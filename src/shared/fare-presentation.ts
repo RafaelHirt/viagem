@@ -36,6 +36,12 @@ const validCount = (value: number | undefined): value is number =>
 const adultsLabel = (count: number) => `${count} ${count === 1 ? 'adulto' : 'adultos'}`
 const brl = (cents: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100)
 
+export function needsPassengerRecheck(offer: Offer, requestedAdults?: number): boolean {
+  if (offer.kind !== 'flight') return false
+  if (validCount(requestedAdults) && validCount(offer.passengers) && requestedAdults !== offer.passengers) return true
+  return Number(requestedAdults ?? offer.passengers) > 1 && offer.passengerValidation !== 'source-verified'
+}
+
 /** Only explicit provider metadata determines whether a price is individual or a group total. */
 export function presentFare(offer: Offer, fallbackAdults?: number): PresentedFare {
   const passengers = validCount(offer.passengers) ? offer.passengers

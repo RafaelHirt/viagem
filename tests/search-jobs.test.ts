@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 const query = { origin: 'GYN', destination: 'Europa', minDays: 10, maxDays: 20, horizonMonths: 12, adults: 2, allowOpenJaw: true };
 const result: ExploreResult = {
-  offers: [{ id: 'fixture-only', kind: 'flight', title: 'Goiânia → Paris', price: 985000, currency: 'BRL', passengers: 2, priceBasis: 'unknown', itineraryStatus: 'outbound-only', origin: 'GYN', arrivalAirport: 'CDG', departureAirport: 'CDG', outboundDate: '2027-03-10', returnDate: '2027-03-21', observedAt: '2026-10-17T18:00:00Z', details: [], provider: 'Test fixture', confirmed: false }],
+  offers: [{ id: 'fixture-only', kind: 'flight', title: 'Goiânia → Paris', price: 985000, currency: 'BRL', passengers: 2, passengerValidation: 'source-verified', priceBasis: 'unknown', itineraryStatus: 'outbound-only', origin: 'GYN', arrivalAirport: 'CDG', departureAirport: 'CDG', outboundDate: '2027-03-10', returnDate: '2027-03-21', observedAt: '2026-10-17T18:00:00Z', details: [], provider: 'Test fixture', confirmed: false }],
   coverage: { complete: false, queries: 1, description: 'Controlled test response' }, warnings: [],
 };
 const password = 'senha-local-somente-testes';
@@ -41,6 +41,36 @@ async function createJob(f: Awaited<ReturnType<typeof fixture>>, input: unknown 
 }
 
 describe('durable authenticated searches', () => {
+  it('saves a completed search as an alert without a second paid lookup or a browser-supplied price', async () => {
+    const f = await fixture(); const job = await createJob(f);
+    await f.worker(request(job.startUrl, 'POST', { jobId: job.jobId }, f.cookie));
+    const response = await f.handler(request('/api/monitors', 'POST', { kind: 'flight', name: 'Minhas férias', query, sourceSearchJobId: job.jobId, rule: { dropPercent: 20, windowDays: 60 }, channels: { email: 'qa@example.com', telegram: false }, offer: { price: 1 } }, f.cookie));
+    expect(response.status).toBe(201);
+    const saved = await response.json();
+    expect(saved).toMatchObject({ seeded: true, summary: { latest: { price: 985000, passengers: 2 }, baseline: { validDays: 0, mean: null } } });
+    expect(saved.monitor.query).toEqual(query);
+    const observations = await f.storage.listObservations(saved.monitor.id);
+    expect(observations).toHaveLength(1); expect(observations[0].complete).toBe(false);
+    expect(f.search).toHaveBeenCalledOnce(); expect(f.notify).not.toHaveBeenCalled();
+  });
+
+  it('rejects reusing a completed search after changing travellers or travel criteria', async () => {
+    const f = await fixture(); const job = await createJob(f);
+    await f.worker(request(job.startUrl, 'POST', { jobId: job.jobId }, f.cookie));
+    for (const patch of [{ adults: 1 }, { destination: 'Brasil' }, { startMonth: '2027-02', endMonth: '2027-10' }]) {
+      const response = await f.handler(request('/api/monitors', 'POST', { kind: 'flight', name: 'Outra busca', query: { ...query, ...patch }, sourceSearchJobId: job.jobId, rule: { dropPercent: 20, windowDays: 60 }, channels: { telegram: false } }, f.cookie));
+      expect(response.status).toBe(400);
+    }
+    expect(await f.storage.listMonitors()).toHaveLength(0); expect(f.search).toHaveBeenCalledOnce();
+  });
+
+  it('never records or notifies a one-adult fare when the saved alert requests two', async () => {
+    const f = await fixture(false, vi.fn(async () => ({ ...result, offers: [{ ...result.offers[0], passengers: 1 }] })));
+    const created = await (await f.handler(request('/api/monitors', 'POST', { kind: 'flight', name: 'Casal', query, rule: { dropPercent: 20, windowDays: 60 }, channels: { telegram: false } }, f.cookie))).json();
+    const response = await f.handler(request(`/api/monitors/${created.monitor.id}/run`, 'POST', undefined, f.cookie));
+    expect(response.status).toBe(502); expect(await response.json()).toMatchObject({ code: 'PROVIDER_PASSENGER_MISMATCH' });
+    expect(await f.storage.listObservations(created.monitor.id)).toHaveLength(0); expect(f.notify).not.toHaveBeenCalled();
+  });
   it('protects creation, polling and workers without consuming the provider', async () => {
     const f = await fixture(); const job = await createJob(f);
     expect(job.startUrl).toBe('/.netlify/functions/search-background');

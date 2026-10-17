@@ -1,5 +1,5 @@
 /** Searches run in a durable job so provider latency does not hold a web request open. */
-export async function runSearchJob<T>(request: Record<string, unknown>): Promise<T> {
+export async function runSearchJob<T>(request: Record<string, unknown>, onCreated?: (jobId: string) => void): Promise<T> {
   async function send(path: string, options?: RequestInit) {
     try {
       return await fetch(path, { ...options, credentials: 'same-origin', signal: AbortSignal.timeout(15_000), headers: { 'Content-Type': 'application/json' } });
@@ -14,6 +14,7 @@ export async function runSearchJob<T>(request: Record<string, unknown>): Promise
     return body;
   }
   const job = await json('/search-jobs', { method: 'POST', body: JSON.stringify(request) });
+  onCreated?.(job.jobId);
   if (!/^\/(?:api\/search-jobs\/[a-zA-Z0-9_-]+\/start|\.netlify\/functions\/search-background)$/.test(job.startUrl)) {
     throw new Error('Não foi possível iniciar a consulta. Recarregue a página e tente novamente.');
   }
