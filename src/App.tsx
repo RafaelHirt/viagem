@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import QueryWizard, { initialFlight, initialHotel, type FlightDraft, type HotelDraft } from "./components/QueryWizard";
 import { labelAirport, findAirport } from "./shared/airports";
 import SetupGuide from "./components/SetupGuide";
+import TripSummary from "./components/TripSummary";
 import {
   ArrowDownRight,
   ArrowRight,
@@ -200,9 +201,10 @@ function OfferCard({ offer }: { offer: Offer }) {
           <li key={i}>{detail}</li>
         ))}
       </ul>
+      {offer.tripPreview && <TripSummary preview={offer.tripPreview} transport={offer.tripPreview.transport} />}
       <div className="offer-bottom">
         <div>
-          <span className="price-label">Preço informado pela fonte</span>
+          <span className="price-label">{offer.tripPreview ? 'Somente passagem aérea · deslocamentos internos à parte' : 'Preço informado pela fonte'}</span>
           <strong>{money(offer.price)}</strong>
         </div>
         {safeUrl ? (
@@ -319,6 +321,7 @@ export default function App() {
         origin: flight.origin.trim(),
         destination: flight.destination.trim(),
         ...(flight.area ? { area: flight.area } : {}),
+        ...(flight.destinationMode === 'trip' && flight.tripPlan ? { tripPlan: flight.tripPlan } : {}),
         minDays: Number(flight.minDays),
         maxDays: Number(flight.maxDays),
         horizonMonths: Number(flight.horizonMonths),
@@ -721,6 +724,7 @@ export default function App() {
             </div>
           ) : (
             <>
+              {!status.authConfigured && <div className="setup-required-notice" role="status"><Info size={18} /><p>{status.authConfiguration === 'too-short' ? 'A senha chegou ao servidor, mas tem menos de 12 caracteres. Ajuste DASHBOARD_PASSWORD em Production no Netlify e publique novamente.' : 'O acesso ainda precisa de uma senha válida no servidor. Você pode experimentar o planejador; consultas e alertas ficam disponíveis após configurar o acesso.'}</p><button type="button" onClick={() => navigate('settings')}>Configurar acesso<ArrowRight size={14} /></button></div>}
               {tab === "overview" && (
                 <>
                   <div className="page-heading">

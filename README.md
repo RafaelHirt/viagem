@@ -32,6 +32,7 @@ Consulte [Publicação e configuração](docs/DEPLOY.md) para as variáveis de f
 
 - Separar exploração imediata e criação de alertas em formulários por etapas, tanto para passagens quanto para hotéis.
 - Encontrar aeroportos digitando cidade ou nome, escolher regiões sugeridas e marcar uma área circular no mapa, sem precisar conhecer códigos ou estimar quilômetros.
+- Experimentar roteiros por dois a cinco países com várias áreas, países livres ou obrigatórios, ordem editável e faixas indicativas de tempo de deslocamento. A prévia geográfica não consulta rotas reais ou preços internos.
 - Explorar passagens com datas exatas ou descobrir ofertas com duração variável; apresenta a cobertura retornada, sem inventar preços.
 - Consultar itinerários com cidades de chegada e saída diferentes em datas definidas e validar a distância entre aeroportos conhecidos.
 - Criar, pausar, consultar e excluir monitores, com persistência local ou Netlify Blobs no deploy.
@@ -56,3 +57,4 @@ A coleta agendada começa desativada. E-mail e Telegram têm transportes impleme
 - [Publicação e configuração](docs/DEPLOY.md).
 - [Busca de hotéis e pré-requisitos Booking](docs/HOTEIS.md).
 - [Origem e licença dos dados geográficos](docs/DADOS-GEOGRAFICOS.md).
+- [Roteiros e método das estimativas de tempo](docs/ROTEIROS.md).

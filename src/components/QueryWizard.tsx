@@ -1,15 +1,18 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, Bell, Check, Hotel, Info, LoaderCircle, MapPin, Plane, Search, SlidersHorizontal } from 'lucide-react';
-import type { GeoArea } from '../shared/types';
+import type { GeoArea, TripPlan } from '../shared/types';
 import { findAirport, labelAirport, REGIONS } from '../shared/airports';
+import { DEFAULT_TRIP, previewTrip } from '../shared/trip-planner';
+import TripSummary from './TripSummary';
 import AirportAutocomplete from './AirportAutocomplete';
 import HotelAutocomplete from './HotelAutocomplete';
 import './query-wizard.css';
 const AreaMap = lazy(() => import('./AreaMap'));
+const TripPlanner = lazy(() => import('./TripPlanner'));
 export type FlightDraft = {
-  origin: string; destination: string; destinationMode: 'region' | 'airport' | 'map'; arrivalAirport: string; departureAirport: string;
+  origin: string; destination: string; destinationMode: 'region' | 'airport' | 'map' | 'trip'; arrivalAirport: string; departureAirport: string;
   departureDate: string; returnDate: string; minDays: string; maxDays: string; horizonMonths: string; maxAirportDistanceKm: string;
-  adults: string; allowOpenJaw: boolean; area?: GeoArea;
+  adults: string; allowOpenJaw: boolean; area?: GeoArea; tripPlan?: TripPlan;
 };
 export type HotelDraft = { property: string; propertyId: string; checkIn: string; checkOut: string; pattern: 'weekend' | 'weekdays' | 'both'; adults: string; horizonMonths: string };
 export const initialFlight: FlightDraft = { origin: '', destination: 'Europa', destinationMode: 'region', arrivalAirport: '', departureAirport: '', departureDate: '', returnDate: '', minDays: '10', maxDays: '20', horizonMonths: '12', maxAirportDistanceKm: '', adults: '1', allowOpenJaw: true };
@@ -23,7 +26,7 @@ export default function QueryWizard({ mode, kind, onKindChange, flight, setFligh
 }) {
   const [step, setStep] = useState(0);
   const [error, setError] = useState('');
-  const [mapRegion, setMapRegion] = useState(flight.destination);
+  const [mapRegion, setMapRegion] = useState(REGIONS.some(region => region.label === flight.destination) ? flight.destination : 'Europa');
   const title = useRef<HTMLHeadingElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const didMount = useRef(false);
@@ -39,6 +42,7 @@ export default function QueryWizard({ mode, kind, onKindChange, flight, setFligh
         if (!findAirport(flight.origin)) message = 'Selecione seu aeroporto de partida na lista de cidades.';
         else if (flight.destinationMode === 'airport' && !findAirport(flight.arrivalAirport)) message = 'Selecione a cidade ou o aeroporto de chegada na lista.';
         else if (flight.destinationMode === 'map' && !flight.area && !REGIONS.some(region => region.label === flight.destination)) message = 'Marque uma área no mapa para escolher os aeroportos permitidos.';
+        else if (flight.destinationMode === 'trip' && (!flight.tripPlan || previewTrip(flight.tripPlan).status !== 'ready')) message = flight.tripPlan ? previewTrip(flight.tripPlan).message : 'Marque as áreas para montar o roteiro.';
       } else if (!hotel.propertyId) message = 'Selecione um hotel encontrado na Booking. O nome digitado sozinho ainda não confirma a propriedade.';
     }
     if (step === 1) {
@@ -72,15 +76,16 @@ export default function QueryWizard({ mode, kind, onKindChange, flight, setFligh
       {step === 0 && (kind === 'flight' ? <>
         <AirportAutocomplete value={flight.origin} onChange={value => f('origin', value)} label="De onde você pode sair?" />
         <div className="destination-options"><span className="field-label">Como prefere escolher o destino?</span><div className="destination-modes" role="group" aria-label="Escolha de destino">
-          {([['region', 'Uma região'], ['airport', 'Cidade ou aeroporto'], ['map', 'Marcar no mapa']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={flight.destinationMode === value} className={flight.destinationMode === value ? 'selected' : ''} onClick={() => { if (value === flight.destinationMode) return; const region = REGIONS.some(region => region.label === flight.destination) ? flight.destination : 'Europa'; if (value === 'map') setMapRegion(region); setFlight({ ...flight, destinationMode: value, destination: value === 'region' || value === 'map' ? region : flight.destination, arrivalAirport: '', departureAirport: '', area: undefined }); }}>{label}</button>)}
+          {([['region', 'Uma região'], ['airport', 'Cidade ou aeroporto'], ['map', 'Marcar no mapa'], ['trip', 'Vários países']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={flight.destinationMode === value} className={flight.destinationMode === value ? 'selected' : ''} onClick={() => { if (value === flight.destinationMode) return; const region = REGIONS.some(region => region.label === flight.destination) ? flight.destination : 'Europa'; if (value === 'map' || value === 'trip') setMapRegion(region); setFlight({ ...flight, destinationMode: value, destination: value === 'region' || value === 'map' ? region : flight.destination, arrivalAirport: '', departureAirport: '', area: undefined, ...(value === 'trip' ? { tripPlan: flight.tripPlan ?? { ...DEFAULT_TRIP, areas: flight.area ? [flight.area] : [] }, destination: `Roteiro por ${flight.tripPlan?.countryCount ?? 3} países` } : {}) }); }}>{label}</button>)}
         </div></div>
         {flight.destinationMode === 'region' && <div className="region-options" role="group" aria-label="Regiões de destino">{REGIONS.map(region => <button type="button" key={region.id} aria-pressed={flight.destination === region.label} className={flight.destination === region.label ? 'selected' : ''} onClick={() => f('destination', region.label)}><MapPin size={14} />{region.label}</button>)}<p className="wizard-hint">Qualquer aeroporto disponível na região pode entrar na busca. A cobertura real aparece no resultado.</p></div>}
         {flight.destinationMode === 'airport' && <AirportAutocomplete label="Para qual cidade ou aeroporto?" value={flight.arrivalAirport} onChange={value => setFlight({ ...flight, arrivalAirport: value, departureAirport: '', destination: value ? labelAirport(value) : '' })} placeholder="Ex.: Paris, Lisboa ou Roma" />}
         {flight.destinationMode === 'map' && <div className="wizard-map"><p className="wizard-hint">Marque uma bolha no mapa. Na viagem com cidades diferentes, os aeroportos de chegada e saída devem estar dentro dela.</p><Suspense fallback={<div className="map-loading"><LoaderCircle className="spin" size={20} />Carregando mapa…</div>}><AreaMap value={flight.area} onChange={area => setFlight({ ...flight, area, destination: area ? area.label || 'Área no mapa' : mapRegion, arrivalAirport: '', departureAirport: '' })} region={mapRegion} /></Suspense></div>}
+        {flight.destinationMode === 'trip' && <Suspense fallback={<div className="map-loading"><LoaderCircle className="spin" size={20} />Carregando planejador…</div>}><TripPlanner value={flight.tripPlan ?? DEFAULT_TRIP} region={mapRegion} onChange={tripPlan => setFlight({ ...flight, tripPlan, area: undefined, destination: `Roteiro por ${tripPlan.countryCount} países` })} /></Suspense>}
       </> : <><HotelAutocomplete value={hotel.property} selectedId={hotel.propertyId} onChange={(property, propertyId) => setHotel({ ...hotel, property, propertyId })} /><div className="inline-note"><Info size={17} /><span>A lista identifica hotéis presentes na fonte. Digitar um nome não confirma que ele existe na Booking nem garante disponibilidade nas datas futuras.</span></div></>)}
       {step === 1 && (kind === 'flight' ? <>
         <div className="field-grid three"><Field label="Ficar pelo menos"><div className="input-suffix"><input type="number" required min={1} max={90} value={flight.minDays} onChange={e => f('minDays', e.target.value)} /><span>dias</span></div></Field><Field label="Ficar no máximo"><div className="input-suffix"><input type="number" required min={1} max={90} value={flight.maxDays} onChange={e => f('maxDays', e.target.value)} /><span>dias</span></div></Field><Horizon value={flight.horizonMonths} onChange={value => f('horizonMonths', value)} /></div>
-        <div className="flexibility-box"><label className="checkbox-label"><input type="checkbox" checked={flight.allowOpenJaw} onChange={e => setFlight({ ...flight, allowOpenJaw: e.target.checked, departureAirport: e.target.checked ? flight.departureAirport : '' })} /><span><strong>Posso chegar por uma cidade e voltar por outra</strong><small>{flight.area ? 'Os dois aeroportos ficam dentro da área que você marcou.' : 'Para limitar os dois aeroportos visualmente, volte à etapa Destino e marque uma área no mapa.'}</small></span></label></div>
+        <div className="flexibility-box"><label className="checkbox-label"><input type="checkbox" checked={flight.allowOpenJaw} onChange={e => setFlight({ ...flight, allowOpenJaw: e.target.checked, departureAirport: e.target.checked ? flight.departureAirport : '' })} /><span><strong>Posso chegar por uma cidade e voltar por outra</strong><small>{flight.destinationMode === 'trip' ? 'Os dois aeroportos devem permitir um roteiro pelos países e áreas escolhidos.' : flight.area ? 'Os dois aeroportos ficam dentro da área que você marcou.' : 'Para limitar os dois aeroportos visualmente, volte à etapa Destino e marque uma área no mapa.'}</small></span></label></div>
         <Field label="Quantos adultos vão viajar?"><input type="number" required min={1} max={9} value={flight.adults} onChange={e => f('adults', e.target.value)} /></Field>
         <details className="advanced-fields"><summary><SlidersHorizontal size={16} />Preferências opcionais<span>Datas e aeroportos específicos</span></summary><div className="field-grid">
           <Field label="Ida em uma data específica"><input type="date" value={flight.departureDate} onChange={e => f('departureDate', e.target.value)} /></Field><Field label="Volta em uma data específica"><input type="date" min={flight.departureDate || undefined} value={flight.returnDate} onChange={e => f('returnDate', e.target.value)} /></Field>
@@ -97,7 +102,7 @@ export default function QueryWizard({ mode, kind, onKindChange, flight, setFligh
         <dl className="query-review"><div><dt>O que acontece agora</dt><dd>{mode === 'explore' ? 'Consultar preços disponíveis hoje, sem criar alertas.' : 'Salvar uma regra para acompanhar preços e avisar sobre quedas.'}</dd></div>
           {kind === 'flight' ? <><div><dt>Partida</dt><dd>{labelAirport(flight.origin)}</dd></div><div><dt>Destino</dt><dd>{destination}</dd></div><div><dt>Duração e período</dt><dd>{flight.minDays} a {flight.maxDays} dias · próximos {flight.horizonMonths} meses</dd></div><div><dt>Flexibilidade</dt><dd>{flight.allowOpenJaw ? 'Pode chegar e voltar por cidades diferentes' : 'Chegada e retorno pela mesma cidade'}{flight.area ? ' dentro da área marcada' : ''}{flight.maxAirportDistanceKm ? ` · até ${flight.maxAirportDistanceKm} km entre aeroportos` : ''}</dd></div>{flight.departureDate && <div><dt>Datas definidas</dt><dd>{flight.departureDate.split('-').reverse().join('/')} a {flight.returnDate.split('-').reverse().join('/')}</dd></div>}</> : <><div><dt>Hotel selecionado</dt><dd>{hotel.property}</dd></div><div><dt>Estadias</dt><dd>{hotel.pattern === 'weekend' ? 'Sexta a domingo' : hotel.pattern === 'weekdays' ? 'Domingo a sexta' : 'Semana e fins de semana'} · próximos {hotel.horizonMonths} meses</dd></div>{hotel.checkIn && <div><dt>Datas definidas</dt><dd>{hotel.checkIn.split('-').reverse().join('/')} a {hotel.checkOut.split('-').reverse().join('/')}</dd></div>}</>}
           <div><dt>Viajantes</dt><dd>{kind === 'flight' ? flight.adults : hotel.adults} adulto(s)</dd></div>{mode === 'monitor' && <div><dt>Regra do alerta</dt><dd>{alertSummary}</dd></div>}
-        </dl><div className="inline-note"><Info size={17} /><span>{mode === 'explore' ? 'Os preços são de hoje para viajar no futuro. O resultado informa as datas consultadas, a cobertura e eventuais limitações da fonte.' : 'O histórico começa nas primeiras consultas. O acompanhamento automático e o envio dependem das conexões ativas em Configurações.'}</span></div>
+        </dl>{kind === 'flight' && flight.destinationMode === 'trip' && flight.tripPlan && <TripSummary preview={previewTrip(flight.tripPlan)} transport={flight.tripPlan.transport} />}<div className="inline-note"><Info size={17} /><span>{mode === 'explore' ? 'Os preços são de hoje para viajar no futuro. O resultado informa as datas consultadas, a cobertura e eventuais limitações da fonte.' : 'O histórico começa nas primeiras consultas. O acompanhamento automático e o envio dependem das conexões ativas em Configurações.'}</span></div>
       </>}
     </div>
     {error && <div className="error-message wizard-error" role="alert"><Info size={18} /><span>{error}</span></div>}

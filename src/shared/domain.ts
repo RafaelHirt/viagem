@@ -1,5 +1,5 @@
-import type { FlightQuery, GeoArea, HotelQuery, Monitor, Observation } from './types.ts'
-import { findAirport } from './airports.ts'
+import type { FlightQuery, GeoArea, HotelQuery, Monitor, Observation, TripPlan } from './types.ts'
+import { AIRPORTS, findAirport } from './airports.ts'
 export { AIRPORTS, findAirport } from './airports.ts'
 export type { Airport } from './airports.ts'
 
@@ -146,6 +146,22 @@ function optionalArea(value: unknown): GeoArea | undefined {
     ...(area.label === undefined ? {} : { label: text(area.label, 'um nome para a área', 120) }) }
 }
 
+function optionalTripPlan(value: unknown): TripPlan | undefined {
+  if (value === undefined) return undefined
+  const plan = object(value, 'Informe um roteiro válido.')
+  if (!Array.isArray(plan.areas) || plan.areas.length < 1 || plan.areas.length > 5) throw new Error('Marque de uma a cinco áreas no roteiro.')
+  const areas = plan.areas.map(area => { const parsed = optionalArea(area); if (!parsed) throw new Error('Área do roteiro inválida.'); return parsed })
+  const countryCount = integer(plan.countryCount, 'A quantidade de países', 2, 5)
+  if (areas.length > countryCount) throw new Error('Use no máximo uma área por país desejado; uma área pode abranger vários países.')
+  const knownCountries = new Set(AIRPORTS.map(airport => airport.countryCode))
+  if (!Array.isArray(plan.countryCodes) || plan.countryCodes.length > countryCount || plan.countryCodes.some(code => typeof code !== 'string' || !knownCountries.has(code)) || new Set(plan.countryCodes).size !== plan.countryCodes.length) throw new Error('Escolha países válidos e diferentes para o roteiro.')
+  if (!['train', 'car', 'flight'].includes(plan.transport as string)) throw new Error('Escolha trem, carro ou avião para os deslocamentos.')
+  if (typeof plan.maxLegHours !== 'number' || !Number.isFinite(plan.maxLegHours) || plan.maxLegHours < 1 || plan.maxLegHours > 48) throw new Error('O limite por trecho deve estar entre 1 e 48 horas.')
+  const flexibleOrder = boolean(plan.flexibleOrder, 'se a ordem dos países é livre')
+  if (!flexibleOrder && plan.countryCodes.length !== countryCount) throw new Error('Escolha todos os países para fixar a ordem do roteiro.')
+  return { countryCount, areas, countryCodes: [...plan.countryCodes] as string[], transport: plan.transport as TripPlan['transport'], maxLegHours: plan.maxLegHours, flexibleOrder }
+}
+
 function flightQuery(value: unknown): FlightQuery {
   const query = object(value, 'Informe os critérios da viagem.')
   const minDays = integer(query.minDays, 'A duração mínima', 1, 365)
@@ -175,6 +191,9 @@ function flightQuery(value: unknown): FlightQuery {
       throw new Error('Os aeroportos escolhidos excedem a distância máxima informada.')
     }
   }
+  const area = optionalArea(query.area)
+  const tripPlan = optionalTripPlan(query.tripPlan)
+  if (area && tripPlan) throw new Error('Escolha uma área simples ou um roteiro com vários países.')
   return {
     origin: parseIata(query.origin),
     destination: text(query.destination, 'um destino ou região'),
@@ -184,7 +203,7 @@ function flightQuery(value: unknown): FlightQuery {
     maxAirportDistanceKm,
     adults: integer(query.adults, 'A quantidade de adultos', 1, 9),
     allowOpenJaw,
-    area: optionalArea(query.area),
+    area, tripPlan,
   }
 }
 

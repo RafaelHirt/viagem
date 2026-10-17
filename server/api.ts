@@ -119,6 +119,10 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
   const { storage, development = false, search = explore, providerStatus = getProviderStatus, notify = sendNotifications, hotelSuggestions = suggestHotels } = options;
   const password = options.password ?? process.env.DASHBOARD_PASSWORD ?? (development ? 'viagem-local' : '');
   const configured = development ? password.length > 0 : password.length >= 12;
+  const authConfiguration = configured ? 'ready' : password.length ? 'too-short' : 'missing';
+  const setupMessage = authConfiguration === 'too-short'
+    ? 'A senha do painel foi recebida pelo servidor, mas tem menos de 12 caracteres. Altere DASHBOARD_PASSWORD no contexto Production do Netlify e faça um novo deploy.'
+    : 'Configure DASHBOARD_PASSWORD no servidor com pelo menos 12 caracteres para habilitar o painel.';
   const mayAttemptLogin = createLoginLimiter();
   return async (request) => {
     try {
@@ -131,7 +135,7 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
       if (path === '/api/status' && method === 'GET') {
         const status: Status & { collection: { enabled: boolean; minimumHistoryDays: number; maxMonitorsPerRun: number } } = {
           providers: providerStatus(), notifications: getNotificationStatus(),
-          authConfigured: configured, authenticated: configured && hasSession(request, password), development,
+          authConfigured: configured, authConfiguration, authenticated: configured && hasSession(request, password), development,
           collection: { enabled: process.env.ENABLE_SCHEDULED_COLLECTION === 'true', minimumHistoryDays: minimumHistoryDays(), maxMonitorsPerRun: MAX_SCHEDULED_MONITORS },
         };
         return json(status);
@@ -139,7 +143,7 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
       if (path === '/api/session' && method === 'DELETE') {
         return json({ authenticated: false }, 200, { 'Set-Cookie': clearSessionCookie(development) });
       }
-      if (!configured) throw new HttpError(503, 'Configure DASHBOARD_PASSWORD no servidor com pelo menos 12 caracteres para habilitar o painel.');
+      if (!configured) throw new HttpError(503, setupMessage);
       if (path === '/api/session' && method === 'POST') {
         if (!mayAttemptLogin(request)) throw new HttpError(429, 'Muitas tentativas. Aguarde 15 minutos antes de tentar novamente.');
         const body = await bodyOf(request);

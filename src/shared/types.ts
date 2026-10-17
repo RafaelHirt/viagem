@@ -5,6 +5,37 @@ export interface GeoArea {
   label?: string
 }
 
+export type TravelMode = 'train' | 'car' | 'flight'
+export interface TripPlan {
+  countryCount: number
+  areas: GeoArea[]
+  countryCodes: string[]
+  transport: TravelMode
+  maxLegHours: number
+  flexibleOrder: boolean
+}
+export interface TripStop {
+  airportCode: string
+  city: string
+  country: string
+  countryCode: string
+  lat: number
+  lon: number
+}
+export interface TripLeg {
+  distanceKm: number
+  minMinutes: number
+  maxMinutes: number
+}
+export interface TripPreview {
+  transport: TravelMode
+  status: 'ready' | 'empty' | 'insufficient-countries' | 'no-route'
+  stops: TripStop[]
+  legs: TripLeg[]
+  countryCount: number
+  message: string
+}
+
 export interface FlightQuery {
   origin: string
   destination: string
@@ -19,6 +50,7 @@ export interface FlightQuery {
   adults: number
   allowOpenJaw: boolean
   area?: GeoArea
+  tripPlan?: TripPlan
 }
 
 export interface HotelSuggestion {
@@ -73,6 +105,7 @@ export interface Offer {
   observedAt: string
   provider: string
   confirmed: boolean
+  tripPreview?: TripPreview
 }
 
 export interface Observation {
@@ -106,6 +139,7 @@ export interface Status {
   }
   notifications: { email: boolean; telegram: boolean }
   authConfigured: boolean
+  authConfiguration?: 'missing' | 'too-short' | 'ready'
   authenticated: boolean
   development?: boolean
   collection?: {

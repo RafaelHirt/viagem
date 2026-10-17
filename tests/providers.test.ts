@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { explore, getProviderStatus, ProviderError } from '../server/providers';
 import type { FlightQuery } from '../src/shared/types';
+import { findAirport } from '../src/shared/airports';
 
 const query: FlightQuery = {
   origin: 'GRU', destination: 'Europa', arrivalAirport: 'CDG', departureAirport: 'CDG',
@@ -31,6 +32,23 @@ describe('real price provider adapter', () => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it('preserves country and area constraints when attaching a geographic itinerary to a fare', async () => {
+    vi.mocked(fetch).mockResolvedValue(response(fixedData));
+    const tripPlan: NonNullable<FlightQuery['tripPlan']> = { countryCount: 3, countryCodes: ['FR', 'BE', 'NL'], transport: 'train', maxLegHours: 12, flexibleOrder: true,
+      areas: ['CDG', 'BRU', 'AMS'].map(code => { const airport = findAirport(code)!; return { lat: airport.lat, lon: airport.lon, radiusKm: 125 }; }) };
+    const result = await explore('flight', { ...query, tripPlan });
+    expect(result.offers).toHaveLength(1);
+    expect(result.offers[0].price).toBe(321055);
+    expect(result.offers[0].confirmed).toBe(false);
+    expect(result.coverage.complete).toBe(false);
+    expect(result.offers[0].tripPreview?.countryCount).toBe(3);
+    expect(result.offers[0].tripPreview?.stops.at(-1)?.airportCode).toBe('CDG');
+    expect(result.warnings.join(' ')).toContain('sem trens');
+    vi.mocked(fetch).mockClear();
+    await expect(explore('flight', { ...query, tripPlan: { ...tripPlan, maxLegHours: 1 } })).rejects.toMatchObject({ code: 'INVALID_TRIP_PLAN' });
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('reports missing setup and does not call the upstream service without a key', async () => {
@@ -134,6 +152,20 @@ describe('real price provider adapter', () => {
     vi.mocked(fetch).mockResolvedValue(response({ deals: [deal, { ...deal, name: 'Amsterdam', arrival_airport_code: 'AMS' }] }));
     const result = await explore('flight', { ...query, destination: 'Área no mapa', area: { lat: 48.85, lon: 2.35, radiusKm: 100 }, arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined });
     expect(result.offers.map((offer) => offer.arrivalAirport)).toEqual(['CDG']);
+  });
+
+  it('filters flexible fares by all trip constraints and includes the return to the actual arrival airport', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-17T13:00:00Z'));
+    const deal = { price: 2500, name: 'Paris', departure_airport_code: 'GRU', arrival_airport_code: 'CDG', start_date: '2026-11-10', end_date: '2026-11-21' };
+    const tripPlan: NonNullable<FlightQuery['tripPlan']> = { countryCount: 3, countryCodes: ['FR', 'BE', 'NL'], transport: 'train', maxLegHours: 12, flexibleOrder: false,
+      areas: ['CDG', 'BRU', 'AMS'].map(code => { const airport = findAirport(code)!; return { lat: airport.lat, lon: airport.lon, radiusKm: 125 }; }) };
+    vi.mocked(fetch).mockResolvedValue(response({ deals: [deal, { ...deal, price: 2000, name: 'Amsterdam', arrival_airport_code: 'AMS' }, { ...deal, price: 1000, name: 'Los Angeles', arrival_airport_code: 'LAX' }] }));
+    const result = await explore('flight', { ...query, tripPlan, destination: 'Roteiro por 3 países', arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined });
+    expect(result.offers.map(offer => offer.arrivalAirport)).toEqual(['CDG']);
+    expect(result.offers[0].tripPreview?.stops.map(stop => stop.countryCode)).toEqual(['FR', 'BE', 'NL', 'FR']);
+    expect(result.offers[0].tripPreview?.legs).toHaveLength(3);
+    expect(result.coverage).toMatchObject({ complete: false, queries: 1 });
   });
 
   it('requires both open-jaw airports inside the drawn area before consuming a query', async () => {

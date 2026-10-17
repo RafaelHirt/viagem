@@ -34,6 +34,8 @@ Preencha valores apenas nas variáveis de ambiente do Netlify, disponíveis às 
 
 O armazenamento em Netlify Blobs usa o contexto do site e das funções. Não requer criar uma senha de banco ou expor um token de armazenamento na interface.
 
+Se a chave aérea aparecer presente mas o painel continuar bloqueado pela senha, confira o contexto **Production** de `DASHBOARD_PASSWORD`, o escopo **Functions** e o mínimo de 12 caracteres. Salvar uma variável não atualiza as funções de um deploy já publicado: faça novo deploy. O status agora distingue senha não recebida de senha recebida com menos de 12 caracteres; o valor nunca é exposto pelo diagnóstico.
+
 ## Coleta e alertas
 
 A tarefa está configurada para 11h e 23h UTC, correspondentes a 8h e 20h em São Paulo no fuso atual. O agendador deve permanecer desligado enquanto a fonte não estiver validada para o uso pretendido.

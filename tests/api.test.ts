@@ -43,6 +43,16 @@ function offer(overrides: Partial<Offer> = {}): Offer {
 }
 
 describe('personal dashboard API', () => {
+  it.each([['', 'missing'], ['curta', 'too-short'], ['123456789012', 'ready']])('distinguishes password setup states without revealing the value: %s', async (password, state) => {
+    const { storage } = await storageFixture();
+    const handler = createApiHandler({ storage, password });
+    const status = await (await handler(request('/api/status'))).json();
+    expect(status).toMatchObject({ authConfiguration: state, authConfigured: state === 'ready', authenticated: false });
+    if (password) expect(JSON.stringify(status)).not.toContain(password);
+    const response = await handler(request('/api/explore', 'POST', { kind: 'flight', query: input.query }));
+    expect(response.status).toBe(state === 'ready' ? 401 : 503);
+    if (state === 'too-short') expect(await response.text()).toContain('recebida pelo servidor');
+  });
   it('publishes safe setup status and blocks protected or billable calls without authentication', async () => {
     vi.stubEnv('DASHBOARD_PASSWORD', '');
     vi.stubEnv('SERPAPI_API_KEY', 'secret-value-must-not-appear');
