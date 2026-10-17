@@ -33,3 +33,7 @@ O valor exibido é somente o informado pela fonte aérea. Trens, carros, voos in
 ## Configuração de acesso
 
 `/api/status` informa `authConfiguration` como `missing`, `too-short` ou `ready`, sem expor o valor nem o tamanho exato da senha. Em produção, senha com menos de 12 caracteres mantém as operações privadas bloqueadas. A interface orienta editar `DASHBOARD_PASSWORD` no contexto **Production** do Netlify e fazer novo deploy. Não existe senha substituta ou atalho de autenticação em produção.
+
+## Arraste da área
+
+Arraste dentro da bolha para movê-la sem alterar seu raio. Puxe qualquer ponto da borda ou um dos quatro controles para aumentar/diminuir a área; os alvos mantêm tamanho adequado ao toque em telas pequenas. Arrastar fora da seleção move o mapa. A barra de tamanho continua disponível, inclusive por teclado. Mapas de alertas salvos permanecem somente leitura.

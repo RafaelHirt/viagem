@@ -86,13 +86,33 @@ export interface Monitor {
   createdAt: string
 }
 
-/** Prices throughout the application are integer Brazilian real cents. */
+export interface FlightSegment {
+  origin: string
+  destination: string
+  departureTime?: string
+  arrivalTime?: string
+  airline?: string
+  flightNumber?: string
+}
+
+export interface FlightLeg {
+  direction: 'outbound' | 'return'
+  segments: FlightSegment[]
+  durationMinutes?: number
+  stops?: number
+}
+
+/** Prices are integer Brazilian real cents. Unknown price bases must not be multiplied. */
 export interface Offer {
   id: string
   kind: 'flight' | 'hotel'
   title: string
   price: number
   currency: 'BRL'
+  passengers?: number
+  priceBasis?: 'per-person' | 'group-total' | 'unknown'
+  itineraryStatus?: 'outbound-only' | 'round-trip-dates' | 'complete'
+  flightLegs?: FlightLeg[]
   outboundDate?: string
   returnDate?: string
   nights?: number

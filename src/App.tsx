@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import QueryWizard, { initialFlight, initialHotel, type FlightDraft, type HotelDraft } from "./components/QueryWizard";
-import { labelAirport, findAirport } from "./shared/airports";
+import { findAirport } from "./shared/airports";
 import SetupGuide from "./components/SetupGuide";
+import { presentFare, presentFlightFacts } from "./shared/fare-presentation";
+import { runSearchJob } from "./shared/search-client";
 import TripSummary from "./components/TripSummary";
 import {
   ArrowDownRight,
@@ -13,7 +15,6 @@ import {
   ChevronRight,
   Compass,
   ExternalLink,
-  Globe2,
   Hotel,
   Info,
   LayoutDashboard,
@@ -53,7 +54,7 @@ type Kind = "flight" | "hotel";
 const tabs: { id: Tab; label: string; icon: typeof Plane }[] = [
   { id: "overview", label: "Visão geral", icon: LayoutDashboard },
   { id: "explore", label: "Explorar agora", icon: Compass },
-  { id: "monitors", label: "Meus alertas", icon: Bell },
+  { id: "monitors", label: "Criar Alertas", icon: Bell },
   { id: "settings", label: "Configurações", icon: Settings2 },
 ];
 const money = (cents: number) =>
@@ -67,6 +68,7 @@ const date = (value?: string) =>
     ? new Intl.DateTimeFormat("pt-BR", {
         day: "2-digit",
         month: "short",
+        year: "numeric",
         timeZone: "UTC",
       }).format(new Date(value))
     : "Data flexível";
@@ -158,72 +160,39 @@ function queryDescription(summary: MonitorSummary) {
   const q = summary.monitor.query;
   if (summary.monitor.kind === "flight") {
     const flight = q as FlightQuery;
-    return `${labelAirport(flight.origin)} → ${flight.destination} · ${flight.minDays} a ${flight.maxDays} dias`;
+    return `${findAirport(flight.origin)?.city.split(" (")[0] || flight.origin} → ${flight.destination} · ${flight.minDays} a ${flight.maxDays} dias`;
   }
   const hotel = q as HotelQuery;
   return `${hotel.property} · ${hotel.pattern === "weekend" ? "sexta a domingo" : hotel.pattern === "weekdays" ? "domingo a sexta" : "semana e fins de semana"}`;
 }
-function OfferCard({ offer }: { offer: Offer }) {
-  const Icon = offer.kind === "flight" ? Plane : Hotel;
-  const safeUrl =
-    offer.url && /^https?:\/\//i.test(offer.url) ? offer.url : undefined;
-  return (
-    <article className="offer-card">
-      <div className="offer-top">
-        <span className="offer-icon">
-          <Icon size={21} />
-        </span>
-        <span className="eyebrow">{offer.kind === "flight" ? "Passagem aérea" : "Hospedagem"}</span>
-        <span className={`confirmation ${offer.confirmed ? "confirmed" : ""}`}>
-          {offer.confirmed ? <CheckCircle2 size={13} /> : <Info size={13} />}
-          {offer.confirmed
-            ? "Preço verificado"
-            : "Confira o valor final no vendedor"}
-        </span>
-      </div>
-      <h3>{offer.title}</h3>
-      <div className="offer-dates">
-        <CalendarDays size={15} />
-        {date(offer.outboundDate)}
-        {offer.returnDate && <> — {date(offer.returnDate)}</>}
-        {offer.nights && <> · {offer.nights} noites</>}
-      </div>
-      {(offer.arrivalAirport || offer.departureAirport) && (
-        <p className="offer-route">
-          {offer.origin ? `${labelAirport(offer.origin)} → ` : ""}
-          {offer.arrivalAirport ? labelAirport(offer.arrivalAirport) : ""}
-          {offer.departureAirport &&
-          offer.departureAirport !== offer.arrivalAirport
-            ? ` / volta por ${labelAirport(offer.departureAirport)}`
-            : ""}
-        </p>
-      )}
-      <details className="offer-conditions"><summary>Detalhes da passagem</summary><ul className="offer-details">{offer.details.map((detail, i) => <li key={i}>{detail}</li>)}</ul></details>
+function FlightFacts({ offer }: { offer: Offer }) {
+  if (offer.kind !== "flight") return null;
+  const facts = presentFlightFacts(offer);
+  return <div className="flight-facts">
+    {facts.route && <p className="flight-facts-route">{facts.route}</p>}
+    {facts.returnRoute && <p>Volta{offer.itineraryStatus === 'complete' ? '' : ' prevista'}: {facts.returnRoute}</p>}
+    {facts.dates && <p><CalendarDays size={15} />{facts.dates}{facts.duration && <strong>{facts.duration}</strong>}</p>}
+    {facts.returnNotice && <small>{facts.returnNotice}</small>}
+  </div>;
+}
+function FareAmount({ offer, adults }: { offer: Offer; adults?: number }) {
+  const fare = presentFare(offer, adults);
+  return <div className="fare-amount"><span className="price-label">{fare.caption}</span><strong>{money(fare.priceCents)}</strong><small>{fare.context}</small></div>;
+}
+function OfferCard({ offer, adults }: { offer: Offer; adults?: number }) {
+  const safeUrl = offer.url && /^https:\/\//i.test(offer.url) ? offer.url : undefined;
+  return <article className="offer-card">
+    <h3>{offer.title}</h3>
+    {offer.kind === 'flight' ? <FlightFacts offer={offer} /> : <p className="offer-dates">{date(offer.outboundDate)} — {date(offer.returnDate)}{offer.nights ? ` · ${offer.nights} noites` : ''}</p>}
+    {offer.airline && <p className="offer-airline">{offer.airline}</p>}
+    <div className="offer-bottom"><FareAmount offer={offer} adults={adults} />{safeUrl && <a href={safeUrl} target="_blank" rel="noopener noreferrer" className="button button-secondary button-small">Ver no vendedor<ExternalLink size={14} /></a>}</div>
+    <details className="offer-conditions"><summary>Ver detalhes</summary>
+      {offer.flightLegs?.filter(leg => leg.segments.length).map((leg, index) => <div className="flight-leg-detail" key={index}><strong>{leg.direction === 'return' ? 'Volta' : 'Ida'}</strong>{leg.segments.map((segment, i) => <p key={i}>{segment.origin} → {segment.destination}{segment.departureTime ? ` · ${segment.departureTime}` : ''}{segment.arrivalTime ? ` — ${segment.arrivalTime}` : ''}{segment.flightNumber ? ` · ${segment.flightNumber}` : ''}</p>)}</div>)}
+      <ul className="offer-details">{offer.details.map((detail, i) => <li key={i}>{detail}</li>)}</ul>
       {offer.tripPreview && <TripSummary preview={offer.tripPreview} transport={offer.tripPreview.transport} />}
-      <div className="offer-bottom">
-        <div>
-          <span className="price-label">{offer.tripPreview ? 'Somente passagem aérea · deslocamentos internos à parte' : 'Preço informado pela fonte'}</span>
-          <strong>{money(offer.price)}</strong>
-        </div>
-        {safeUrl ? (
-          <a
-            href={safeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="button button-secondary button-small"
-          >
-            Ver oferta
-            <ExternalLink size={14} />
-          </a>
-        ) : (
-          <span className="muted-small">Sem link de reserva</span>
-        )}
-      </div>
-      <p className="offer-observed">
-        Consultado em {dateTime(offer.observedAt)} · sujeito à disponibilidade.
-      </p>
-    </article>
-  );
+      <p>Consultado em {dateTime(offer.observedAt)}. {offer.confirmed ? 'Preço verificado na consulta.' : 'Confira disponibilidade, total e bagagem no vendedor.'}</p>
+    </details>
+  </article>;
 }
 
 export default function App() {
@@ -242,7 +211,7 @@ export default function App() {
   const [dropPercent, setDropPercent] = useState("20");
   const [windowDays, setWindowDays] = useState("60");
   const [email, setEmail] = useState("");
-  const [telegram, setTelegram] = useState(true);
+  const [telegram, setTelegram] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<ExploreResult | null>(null);
   const [exploreError, setExploreError] = useState("");
@@ -373,10 +342,7 @@ export default function App() {
     try {
       const query = makeQuery();
       setResults(
-        await api<ExploreResult>("/explore", {
-          method: "POST",
-          body: JSON.stringify({ kind, query }),
-        }),
+        await runSearchJob<ExploreResult>({ kind, query }),
       );
     } catch (e) {
       setExploreError((e as Error).message);
@@ -390,7 +356,7 @@ export default function App() {
     setError("");
     try {
       const query = makeQuery();
-      const saved = await api<{ additionalMonitors?: unknown[] }>("/monitors", {
+      const saved = await api<{ monitor: { id: string }; additionalMonitors?: unknown[] }>("/monitors", {
         method: "POST",
         body: JSON.stringify({
           kind,
@@ -414,11 +380,9 @@ export default function App() {
       setMonitors(data.monitors);
       setCreateMonitor(false);
       setMonitorName("");
-      setToast(
-        saved.additionalMonitors?.length
-          ? "Alertas criados com históricos separados para semana e fim de semana."
-          : status?.collection?.enabled ? "Busca salva. O histórico começa com as consultas." : "Busca salva. A atualização automática ainda precisa ser ativada.",
-      );
+      setSubmitting(false);
+      setToast("Alerta salvo. Consultando os primeiros preços…");
+      await monitorAction(saved.monitor.id, "run");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -434,14 +398,14 @@ export default function App() {
     setError("");
     try {
       if (action === "run") {
-        const report = await api<{
+        const report = await runSearchJob<{
           summary: MonitorSummary;
           coverage: Coverage;
           warnings: string[];
           found?: number;
           message?: string;
           notifications?: { channel: string; status: string }[];
-        }>(`/monitors/${id}/run`, { method: "POST" });
+        }>({ monitorId: id });
         setRunReport(report);
         setToast(
           report.found ? "Preços atualizados para esta busca." : "Esta consulta não trouxe preços. Você pode tentar outras datas ou destinos.",
@@ -498,14 +462,7 @@ export default function App() {
       setLoginBusy(false);
     }
   }
-  const configuredCount =
-    Number(status?.providers.flights.configured || false) +
-    Number(status?.providers.hotels.configured || false);
   const activeCount = monitors.filter((item) => item.monitor.enabled).length;
-  const validDays = Math.max(
-    0,
-    ...monitors.map((item) => item.baseline.validDays),
-  );
   const filteredMonitors = monitors.filter(
     (item) => monitorFilter === "all" || item.monitor.kind === monitorFilter,
   );
@@ -612,7 +569,7 @@ export default function App() {
           {tabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
-              onClick={() => navigate(id)}
+              onClick={() => id === "monitors" ? openCreate("flight") : navigate(id)}
               className={`nav-link ${tab === id ? "active" : ""}`}
               aria-current={tab === id ? "page" : undefined}
             >
@@ -812,55 +769,6 @@ export default function App() {
                       </div>
                     </div>
                   </section>
-                  <div className="stats-grid">
-                    <article className="stat-card">
-                      <span className="stat-icon">
-                        <Bell size={20} />
-                      </span>
-                      <div>
-                        <p>Alertas habilitados</p>
-                        <strong>
-                          {activeCount}
-                          <small> / {monitors.length}</small>
-                        </strong>
-                        <span>
-                          {status.collection?.enabled
-                            ? "Coleta automática habilitada"
-                            : "Atualização automática ainda não ativada"}
-                        </span>
-                      </div>
-                    </article>
-                    <article className="stat-card">
-                      <span className="stat-icon blue">
-                        <CalendarDays size={20} />
-                      </span>
-                      <div>
-                        <p>Histórico construído</p>
-                        <strong>
-                          {validDays}
-                          <small> {validDays === 1 ? "dia" : "dias"}</small>
-                        </strong>
-                        <span>Maior histórico entre seus monitores</span>
-                      </div>
-                    </article>
-                    <article className="stat-card">
-                      <span className="stat-icon peach">
-                        <Globe2 size={20} />
-                      </span>
-                      <div>
-                        <p>Fontes configuradas</p>
-                        <strong>
-                          {configuredCount}
-                          <small> / 2</small>
-                        </strong>
-                        <span>
-                          {configuredCount === 2
-                            ? "Credenciais das duas fontes presentes"
-                            : "Passagens e hotéis, em um só lugar"}
-                        </span>
-                      </div>
-                    </article>
-                  </div>
                   <div className="overview-columns">
                     <section className="panel monitors-panel">
                       <div className="panel-heading">
@@ -871,14 +779,12 @@ export default function App() {
                               {monitors.length}
                             </span>
                           </h2>
-                          <p>
-                            Você escolhe a viagem. O radar acompanha os preços.
-                          </p>
+                          <p>Suas viagens e os últimos preços consultados.</p>
                         </div>
                         {monitors.length > 0 && (
                           <button
                             className="text-button"
-                            onClick={() => navigate("monitors")}
+                            onClick={() => { navigate("monitors"); setCreateMonitor(false); }}
                           >
                             Ver todos
                             <ArrowRight size={15} />
@@ -934,6 +840,7 @@ export default function App() {
                               className="compact-monitor"
                               onClick={() => {
                                 setTab("monitors");
+                                setCreateMonitor(false);
                                 void viewHistory(item.monitor.id);
                               }}
                             >
@@ -955,9 +862,7 @@ export default function App() {
                                     : "Sem consultas"}
                                 </strong>
                                 <small>
-                                  {item.baseline.mean
-                                    ? `Média ${money(item.baseline.mean)}`
-                                    : "Construindo referência"}
+                                  {item.latest ? presentFare(item.latest, (item.monitor.query as FlightQuery).adults).context : 'Faça a primeira consulta'}
                                 </small>
                               </div>
                               <ChevronRight size={17} />
@@ -966,76 +871,9 @@ export default function App() {
                         </div>
                       )}
                     </section>
-                    <aside className="panel how-panel">
-                      <span className="eyebrow">
-                        MENOS BUSCA, MAIS DESCOBERTAS
-                      </span>
-                      <h2>Seu radar trabalha assim</h2>
-                      <ol className="steps">
-                        <li>
-                          <span>01</span>
-                          <div>
-                            <h3>Você dá a direção</h3>
-                            <p>
-                              Destino, duração e a liberdade que combina com
-                              você.
-                            </p>
-                          </div>
-                        </li>
-                        <li>
-                          <span>02</span>
-                          <div>
-                            <h3>O histórico dá a referência</h3>
-                            <p>
-                              Comparamos os menores preços diários de buscas
-                              equivalentes.
-                            </p>
-                          </div>
-                        </li>
-                        <li>
-                          <span>03</span>
-                          <div>
-                            <h3>A oportunidade chama</h3>
-                            <p>
-                              Uma queda relevante? Você recebe um aviso por
-                              e-mail ou Telegram.
-                            </p>
-                          </div>
-                        </li>
-                      </ol>
-                      <div className="how-note">
-                        <TrendingDown size={18} />
-                        <span>
-                          O foco é o preço.
-                          <br />
-                          <strong>O destino é viajar mais.</strong>
-                        </span>
-                      </div>
-                    </aside>
+
                   </div>
-                  {configuredCount < 2 && (
-                    <div className="setup-banner">
-                      <span className="setup-banner-icon">
-                        <Settings2 size={20} />
-                      </span>
-                      <div>
-                        <strong>Deixe seu radar pronto para buscar.</strong>
-                        <p>
-                          {configuredCount === 0
-                            ? "Configure as credenciais das fontes para habilitar as consultas reais."
-                            : "Uma das fontes ainda precisa de credenciais para habilitar todas as buscas."}{" "}
-                          Selecione destinos para planejar suas próximas buscas.
-                        </p>
-                      </div>
-                      <button
-                        className="text-button"
-                        onClick={() => navigate("settings")}
-                      >
-                        Ver conexões
-                        <ArrowRight size={16} />
-                      </button>
-                    </div>
-                  )}
+
                 </>
               )}
               {tab === "explore" && (
@@ -1056,7 +894,7 @@ export default function App() {
                   </div>
                   <div className="explore-layout">
                     <section className="panel search-panel">
-                      {results ? <div className="search-recap"><div><strong>{kind === 'flight' ? `${findAirport(flight.origin)?.city || flight.origin} → ${flight.destination}` : hotel.property}</strong><p>{kind === 'flight' ? `${flight.minDays} a ${flight.maxDays} dias · próximos ${flight.horizonMonths} meses` : `Próximos ${hotel.horizonMonths} meses`}</p></div><button className="button button-secondary" onClick={() => { setResults(null); setExploreError(""); }}>Alterar busca</button></div> : <QueryWizard mode="explore" {...queryProps} submitting={submitting} onSubmit={explore} onKindChange={(value) => { setKind(value); setResults(null); setExploreError(""); }} />}
+                      {results ? <div className="search-recap"><div><strong>{kind === 'flight' ? `${findAirport(flight.origin)?.city || flight.origin} → ${flight.destination}` : hotel.property}</strong><p>{kind === 'flight' ? `${flight.minDays} a ${flight.maxDays} dias · próximos ${flight.horizonMonths} meses` : `Próximos ${hotel.horizonMonths} meses`}</p></div><button className="button button-secondary" onClick={() => { setResults(null); setExploreError(""); }}>Alterar busca</button></div> : <QueryWizard hotelAvailable={status.providers.hotels.configured} mode="explore" {...queryProps} submitting={submitting} onSubmit={explore} onKindChange={(value) => { setKind(value); setResults(null); setExploreError(""); }} />}
                     </section>
 
                   </div>
@@ -1100,7 +938,7 @@ export default function App() {
                       {results.offers.length ? (
                         <div className="offers-grid">
                           {results.offers.map((offer) => (
-                            <OfferCard key={offer.id} offer={offer} />
+                            <OfferCard key={offer.id} offer={offer} adults={kind === "flight" ? Number(flight.adults) : Number(hotel.adults)} />
                           ))}
                         </div>
                       ) : (
@@ -1128,48 +966,24 @@ export default function App() {
                       <h1>
                         {createMonitor
                           ? "Criar alerta"
-                          : "Meus alertas"}
+                          : "Alertas salvos"}
                         <span className="heading-dot">.</span>
                       </h1>
                       <p>
                         {createMonitor
-                          ? "Defina a viagem. O histórico mostra quando o preço fica interessante."
-                          : "Acompanhe a evolução dos preços e descubra a hora de partir."}
+                          ? "Escolha a viagem que você quer acompanhar."
+                          : "Consulte e acompanhe suas viagens."}
                       </p>
                     </div>
 
                   </div>
-                  {!createMonitor && <div className="alert-create-entry"><div><strong>Quer acompanhar uma nova viagem?</strong><p>Escolha o destino no mapa e defina quando quer receber um aviso.</p></div><button className="button button-primary" onClick={() => openCreate()}><Plus size={18} />Novo alerta</button></div>}
-                  {!status.collection?.enabled && (
-                    <div className="collection-banner">
-                      <CalendarDays size={19} />
-                      <div>
-                        <strong>Atualização automática ainda não ativada</strong>
-                        <p>
-                          Suas buscas estão salvas. Por enquanto, use Consultar preços para atualizá-las manualmente.
-                        </p>
-                        <button type="button" className="text-button" onClick={() => navigate("settings")}>Ver configurações <ArrowRight size={14} /></button>
-                      </div>
-                    </div>
-                  )}
+                  <div className="alert-view-tabs" role="group" aria-label="Alertas">
+                    <button className={createMonitor ? "selected" : ""} aria-pressed={createMonitor} onClick={() => openCreate("flight")}><Plus size={16} />Criar alerta</button>
+                    <button className={!createMonitor ? "selected" : ""} aria-pressed={!createMonitor} onClick={() => { setCreateMonitor(false); setError(""); }}>Alertas salvos <span>{monitors.length}</span></button>
+                  </div>
+                  {!status.collection?.enabled && !createMonitor && <p className="manual-update-note"><Info size={15} />Atualização manual. <button className="text-button" onClick={() => navigate("settings")}>Ativar avisos automáticos</button></p>}
                   {runReport && !createMonitor && (
                     <div className="run-report" role="status">
-                      <div className="coverage-note">
-                        <Info size={18} />
-                        <div>
-                          <strong>
-                            {runReport.found ? 'Preços atualizados' : 'Esta consulta não trouxe preços'}
-                          </strong>
-                          <p>{runReport.message || 'Confira os preços encontrados nas datas consultadas. A busca não representa todas as datas possíveis.'}</p>
-                        </div>
-                        <button
-                          className="icon-button"
-                          aria-label="Fechar resultado da consulta"
-                          onClick={() => setRunReport(null)}
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
                       {runReport.warnings.length > 0 && <details className="search-explanation"><summary>Sobre esta atualização</summary><p>{runReport.coverage.description}</p><ul>{runReport.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></details>}
                       {runReport.notifications?.map((notification, i) => (
                         <p className="notification-note" key={i}>
@@ -1190,7 +1004,7 @@ export default function App() {
                   )}
                   {createMonitor ? (
                     <section className="panel monitor-form">
-                      <QueryWizard mode="monitor" {...queryProps} onKindChange={setKind} submitting={submitting} onSubmit={saveMonitor} onCancel={() => { setCreateMonitor(false); setError(""); }} alertSummary={`${dropPercent}% abaixo da média dos últimos ${windowDays} dias · ${[email ? "e-mail" : "", telegram ? "Telegram" : ""].filter(Boolean).join(" e ") || "sem canal selecionado"}`} alertFields={<>
+                      <QueryWizard hotelAvailable={status.providers.hotels.configured} mode="monitor" {...queryProps} onKindChange={setKind} submitting={submitting} onSubmit={saveMonitor} onCancel={() => { setCreateMonitor(false); setError(""); }} alertSummary={`${dropPercent}% abaixo da média dos últimos ${windowDays} dias · ${[email ? "e-mail" : "", telegram ? "Telegram" : ""].filter(Boolean).join(" e ") || "acompanhamento no painel"}`} alertFields={<>
                       <div className="field-grid monitor-name">
                         <Field
                           label="Nome do alerta (opcional)"
@@ -1252,18 +1066,8 @@ export default function App() {
                           </select>
                         </Field>
                       </div>
-                      <div className="inline-note">
-                        <Info size={17} />
-                        <span>
-                          Usamos a média dos menores preços diários de consultas
-                          equivalentes. O histórico começa com as consultas e
-                          não é retroativo. Alertas exigem ao menos{" "}
-                          {status.collection?.minimumHistoryDays ?? 7} dias
-                          válidos; resultados parciais ou sem confirmação ficam
-                          fora da média.
-                        </span>
-                      </div>
-                      <div className="form-divider" />
+                      <details className="search-explanation"><summary>Como o alerta compara preços?</summary><p>A referência usa menores preços diários de consultas equivalentes. São necessários {status.collection?.minimumHistoryDays ?? 7} dias válidos; resultados parciais ou sem confirmação ficam fora da média.</p></details>
+                      <details className="search-explanation"><summary>Receber por e-mail ou Telegram</summary>
                       <div className="form-section-heading">
                         <span className="section-icon">
                           <Send size={17} />
@@ -1306,6 +1110,7 @@ export default function App() {
                           servidor para enviar alertas.
                         </p>
                       )}
+                      </details>
                       </>} />
                     </section>
                   ) : (
@@ -1358,10 +1163,7 @@ export default function App() {
                               : "Seu radar está esperando a primeira viagem."}
                           </h2>
                           <p>
-                            Crie uma busca flexível e receba um aviso quando o
-                            preço
-                            <br className="desktop-break" /> ficar abaixo da
-                            média que você acompanha.
+Escolha uma viagem no mapa para começar.
                           </p>
                           <button
                             className="button button-primary"
@@ -1410,67 +1212,17 @@ export default function App() {
                               <p className="monitor-description">
                                 {queryDescription(item)}
                               </p>
-                              <div className="monitor-price">
-                                <div>
-                                  <span>Último preço encontrado</span>
-                                  <strong>
-                                    {item.latest
-                                      ? money(item.latest.price)
-                                      : "Aguardando consulta"}
-                                  </strong>
-                                </div>
-                                {item.baseline.dropPercent !== null &&
-                                  item.baseline.dropPercent > 0 && (
-                                    <span className="drop-badge">
-                                      <ArrowDownRight size={15} />
-                                      {item.baseline.dropPercent.toFixed(1)}%
-                                    </span>
-                                  )}
-                              </div>
-                              <div className="baseline-row">
-                                <span>Média de referência</span>
-                                <strong>
-                                  {item.baseline.mean !== null
-                                    ? money(item.baseline.mean)
-                                    : "Em construção"}
-                                </strong>
-                              </div>
-                              <div className="monitor-rule">
-                                <TrendingDown size={16} />
-                                <span>
-                                  Avisar com queda de{" "}
-                                  <strong>
-                                    {item.monitor.rule.dropPercent}%
-                                  </strong>{" "}
-                                  em {item.monitor.rule.windowDays} dias
-                                </span>
-                              </div>
-                              <div className="monitor-meta">
-                                <span>
-                                  <CalendarDays size={13} />
-                                  {item.baseline.validDays}{" "}
-                                  {item.baseline.validDays === 1
-                                    ? "dia com preço"
-                                    : "dias com preço"}
-                                </span>
-                                <span>
-                                  {item.monitor.channels.email && (
-                                    <Mail size={14} />
-                                  )}
-                                  {item.monitor.channels.telegram && (
-                                    <Send size={14} />
-                                  )}
-                                  {!item.monitor.channels.email &&
-                                    !item.monitor.channels.telegram &&
-                                    "Sem notificações"}
-                                </span>
-                              </div>
-                              {item.latest && (
-                                <span className="last-query">
-                                  Última consulta:{" "}
-                                  {dateTime(item.latest.observedAt)}
-                                </span>
-                              )}
+                              {item.latest ? <>
+                                <div className="monitor-price"><FareAmount offer={item.latest} adults={(item.monitor.query as FlightQuery | HotelQuery).adults} />{item.baseline.dropPercent !== null && item.baseline.dropPercent > 0 && <span className="drop-badge"><ArrowDownRight size={15} />{item.baseline.dropPercent.toFixed(1)}%</span>}</div>
+                                <FlightFacts offer={item.latest} />
+                                {item.latest.url && /^https:\/\//i.test(item.latest.url) && <a className="text-button saved-offer-link" href={item.latest.url} target="_blank" rel="noopener noreferrer">Conferir no vendedor<ExternalLink size={14} /></a>}
+                                <span className="last-query">Consultado em {dateTime(item.latest.observedAt)}</span>
+                              </> : <div className="monitor-price"><div><strong>{busyId === item.monitor.id ? 'Consultando preços…' : 'Faça a primeira consulta'}</strong><small>{busyId === item.monitor.id ? 'Você pode continuar usando o painel.' : 'Use Consultar preços abaixo para ver as opções.'}</small></div></div>}
+                              <details className="monitor-secondary"><summary>Regra e histórico</summary>
+                                <div className="baseline-row"><span>Média de referência</span><strong>{item.baseline.mean !== null ? money(item.baseline.mean) : "Aguardando preços confirmados"}</strong></div>
+                                <p>Avisar com queda de {item.monitor.rule.dropPercent}% em {item.monitor.rule.windowDays} dias.</p>
+                                <p>{item.baseline.validDays} dias válidos para comparação · {[item.monitor.channels.email, item.monitor.channels.telegram ? 'Telegram' : ''].filter(Boolean).join(' e ') || 'Sem canal de envio'}</p>
+                              </details>
                               {item.monitor.kind === 'flight' && <details className="saved-search-map"><summary>Ver busca no mapa</summary><Suspense fallback={<p>Carregando mapa…</p>}><SavedSearchMap query={item.monitor.query as FlightQuery} /></Suspense></details>}
                               <div className="monitor-card-actions">
                                 <button
@@ -1539,7 +1291,7 @@ export default function App() {
                       Atualizar status
                     </button>
                   </div>
-                  <SetupGuide status={status} />
+                  <details className="settings-guide"><summary>Ajuda para configurar as conexões</summary><SetupGuide status={status} /></details>
                   <div className="settings-notice">
                     <ShieldCheck size={21} />
                     <div>
@@ -1782,7 +1534,7 @@ export default function App() {
             ) : (
               <div className="history-list">
                 {observations.map((observation, index) => (
-                  <HistoryItem key={index} observation={observation} />
+                  <HistoryItem key={index} observation={observation} adults={(monitors.find(item => item.monitor.id === historyId)?.monitor.query as FlightQuery | undefined)?.adults} />
                 ))}
               </div>
             )}
@@ -1839,7 +1591,7 @@ function ConnectionCard({
     </article>
   );
 }
-function HistoryItem({ observation }: { observation: Observation }) {
+function HistoryItem({ observation, adults }: { observation: Observation; adults?: number }) {
   // Observation details are supplied by the server; only actual recorded values are rendered.
   const value = observation as unknown as {
     observedAt?: string;
@@ -1863,9 +1615,7 @@ function HistoryItem({ observation }: { observation: Observation }) {
         </strong>
         <small>{offer?.title || "Preço observado na consulta"}</small>
       </div>
-      <strong>
-        {typeof price === "number" ? money(price) : "Sem oferta disponível"}
-      </strong>
+      <div className="history-fare"><strong>{typeof price === "number" ? money(price) : "Sem oferta disponível"}</strong><small>{offer ? presentFare(offer, adults).context : 'Total não confirmado'}</small></div>
     </article>
   );
 }

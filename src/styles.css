@@ -4715,3 +4715,54 @@ main {
  .search-results-note, .search-explanation { font-size: 12px; }
  .alert-create-entry { padding: 20px; }
 }
+
+/* Keep the main tasks readable; supporting configuration stays behind details. */
+.overview-columns { display: block; }
+.overview-columns .monitors-panel { width: 100%; }
+.alert-view-tabs { display: flex; gap: 8px; margin: 0 0 24px; flex-wrap: wrap; }
+.alert-view-tabs button { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #dce5d6; border-radius: 8px; padding: 12px 18px; color: #526b59; font-size: 14px; background: #fff; }
+.alert-view-tabs button.selected { background: #eaf1df; border-color: #95b47c; color: #164e40; font-weight: 600; }
+.alert-view-tabs button span { background: #dce8ce; border-radius: 5px; padding: 1px 6px; font-size: 12px; }
+.manual-update-note { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7d67; margin: 0 0 24px; flex-wrap: wrap; }
+.manual-update-note .text-button { font-size: inherit; text-decoration: underline; }
+.monitor-card h2 { font-size: 19px; }
+.monitor-description { font-size: 12px; color: #71816b; }
+.monitor-price { margin-top: 22px; margin-bottom: 16px; }
+.fare-amount { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.fare-amount .price-label, .monitor-price .price-label { font-size: 12px; color: #627958; line-height: 1.5; }
+.fare-amount > strong { font-size: 27px; font-weight: 650; color: #315b40; line-height: 1.2; letter-spacing: -.6px; }
+.fare-amount > small, .monitor-price small { font-size: 12px; color: #687b62; line-height: 1.6; }
+.flight-facts { margin: 15px 0; display: flex; flex-direction: column; gap: 9px; }
+.flight-facts p { font-size: 13px; line-height: 1.65; color: #596f56; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.flight-facts .flight-facts-route { color: #274e3d; font-weight: 600; }
+.flight-facts p strong { font-size: inherit; font-weight: 600; margin-left: 3px; }
+.flight-facts > small { font-size: 12px; color: #7a7e61; line-height: 1.6; }
+.offer-airline { font-size: 12px; color: #657d5c; margin: 12px 0; }
+.offer-bottom { flex-wrap: wrap; align-items: center; }
+.offer-bottom > .fare-amount { flex: 1 1 200px; }
+.offer-card .offer-conditions { margin-bottom: 0; }
+.offer-details li { font-size: 12px; }
+.flight-leg-detail { margin: 14px 0; font-size: 12px; }
+.flight-leg-detail p { margin-top: 7px; overflow-wrap: anywhere; }
+.monitor-secondary { margin-top: 18px; color: #6d7e64; font-size: 12px; line-height: 1.8; }
+.monitor-secondary summary { cursor: pointer; }
+.monitor-secondary p, .monitor-secondary .baseline-row { margin-top: 10px; font-size: 12px; }
+.last-query { font-size: 11px; color: #87927f; margin-top: 13px; }
+.saved-offer-link { font-size: 13px; display: inline-flex; gap: 7px; margin-top: 2px; }
+.monitor-card-actions .button-small, .monitor-card-actions .text-button { font-size: 12px; }
+.monitor-card-actions { flex-wrap: wrap; gap: 12px; }
+.settings-guide { margin-bottom: 24px; font-size: 14px; color: #436749; }
+.settings-guide > summary { cursor: pointer; padding: 14px 0; }
+.field > span, .field-label { font-size: 13px; }
+.field input, .field select { font-size: 14px; }
+@media (max-width: 600px) {
+  .alert-view-tabs button { padding: 11px 13px; font-size: 13px; }
+  .offer-card, .monitor-card { padding: 20px; }
+  .fare-amount > strong { font-size: 25px; }
+  .monitor-card-actions .button-small, .monitor-card-actions .text-button { font-size: 12px; }
+  .flight-facts p { font-size: 12px; }
+}
+.history-fare { display: flex; flex-direction: column; gap: 6px; max-width: 250px; text-align: right; }
+.history-fare small { font-size: 11px; line-height: 1.6; color: #7d8e72; }
+.compact-monitor > div small { max-width: 230px; line-height: 1.6; white-space: normal; }
+@media (max-width: 600px) { .history-row { flex-wrap: wrap; } .history-fare { width: 100%; max-width: none; text-align: left; padding-left: 20px; } }

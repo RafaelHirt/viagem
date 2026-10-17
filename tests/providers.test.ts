@@ -74,6 +74,21 @@ describe('real price provider adapter', () => {
     expect(url.searchParams.get('api_key')).toBe('private-test-key');
   });
 
+  it('retains demonstrated outbound connections and passenger count without inventing a return itinerary or price basis', async () => {
+    vi.mocked(fetch).mockResolvedValue(response({ ...fixedData, best_flights: [{ price: 9850, total_duration: 975, flights: [
+      { departure_airport: { id: 'GRU', time: '2027-03-10 18:00' }, arrival_airport: { id: 'LIS', time: '2027-03-11 07:00' }, airline: 'TAP', flight_number: 'TP 88' },
+      { departure_airport: { id: 'LIS', time: '2027-03-11 10:00' }, arrival_airport: { id: 'CDG', time: '2027-03-11 13:00' }, airline: 'TAP', flight_number: 'TP 44' },
+    ] }] }));
+    const result = await explore('flight', { ...query, adults: 2 });
+    expect(result.offers[0]).toMatchObject({ price: 985000, passengers: 2, priceBasis: 'unknown', itineraryStatus: 'outbound-only',
+      flightLegs: [{ direction: 'outbound', durationMinutes: 975, stops: 1, segments: [
+        { origin: 'GRU', destination: 'LIS', departureTime: '2027-03-10 18:00', arrivalTime: '2027-03-11 07:00', airline: 'TAP', flightNumber: 'TP 88' },
+        { origin: 'LIS', destination: 'CDG', departureTime: '2027-03-11 10:00', arrivalTime: '2027-03-11 13:00' },
+      ] }] });
+    expect(result.offers[0].flightLegs).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toContain('opaque-next-leg');
+  });
+
   it('sends exact open-jaw itineraries using documented per-leg dates', async () => {
     vi.mocked(fetch).mockResolvedValue(response(fixedData));
     await explore('flight', { ...query, departureAirport: 'AMS', maxAirportDistanceKm: 600 });
@@ -99,7 +114,7 @@ describe('real price provider adapter', () => {
     expect(String(rejected)).not.toContain('private-test-key');
     expect(String(rejected)).not.toContain('https://');
     vi.mocked(fetch).mockRejectedValueOnce(new Error('https://serpapi.com/search.json?api_key=private-test-key'));
-    await expect(explore('flight', query)).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    await expect(explore('flight', query)).rejects.toMatchObject({ code: 'PROVIDER_NETWORK_ERROR' });
   });
 
   it('rejects mismatched currencies rather than labeling foreign amounts as BRL', async () => {
@@ -110,7 +125,7 @@ describe('real price provider adapter', () => {
   it('only returns demonstrated destination matches from flexible discovery and declares partial coverage', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-17T13:00:00Z'));
-    const good = { price: 2500, country: 'France', name: 'Paris', departure_airport_code: 'GRU', arrival_airport_code: 'CDG', start_date: '2026-11-10', end_date: '2026-11-21', flight_link: 'https://www.google.com/travel/flights?id=source' };
+    const good = { price: 2500, country: 'France', name: 'Paris', departure_airport_code: 'GRU', arrival_airport_code: 'CDG', start_date: '2026-11-10', end_date: '2026-11-21', flight_duration: 720, stops: 0, flight_link: 'https://www.google.com/travel/flights?id=source' };
     vi.mocked(fetch).mockResolvedValue(response({ deals: [good,
       { ...good, country: 'Kenya', name: 'Nairobi', arrival_airport_code: 'NBO' },
       { ...good, departure_airport_code: 'JFK' },
@@ -120,6 +135,7 @@ describe('real price provider adapter', () => {
     const result = await explore('flight', { ...query, arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined });
     expect(result.offers).toHaveLength(1);
     expect(result.offers[0]).toMatchObject({ price: 250000, arrivalAirport: 'CDG', departureAirport: 'CDG', confirmed: false });
+    expect(result.offers[0]).toMatchObject({ passengers: 1, priceBasis: 'unknown', itineraryStatus: 'round-trip-dates', flightLegs: [{ direction: 'outbound', durationMinutes: 720, stops: 0, segments: [] }] });
     expect(result.coverage).toMatchObject({ complete: false, queries: 1, requestedHorizonMonths: 12 });
     expect(result.coverage.availableHorizonMonths).toBeUndefined();
     expect(result.warnings.some((warning) => warning.includes('4 resultado(s)'))).toBe(true);
@@ -146,10 +162,73 @@ describe('real price provider adapter', () => {
     }
   });
 
-  it('does not turn a missing or changed response collection into a successful empty result', async () => {
+  it('does not turn changed discovery and route responses into a successful empty result', async () => {
     vi.mocked(fetch).mockResolvedValue(response({ search_metadata: { status: 'Success' } }));
-    await expect(explore('flight', { ...query, arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined })).rejects.toMatchObject({ code: 'PROVIDER_INVALID_RESPONSE' });
+    await expect(explore('flight', { ...query, arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined })).rejects.toMatchObject({ code: 'PROVIDER_SEARCH_FAILED' });
+    expect(fetch).toHaveBeenCalledTimes(4);
+  });
+
+  it('allows an exact lookup to finish after the old 15-second timeout', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetch).mockImplementation((_input, options) => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => resolve(response(fixedData)), 20_000);
+      options?.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); });
+    }));
+    const pending = explore('flight', query);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect((await pending).offers).toHaveLength(1);
     expect(fetch).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('recovers from a timed-out promotion feed by querying dates directly', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetch).mockImplementation((input, options) => {
+      const params = new URL(String(input)).searchParams;
+      if (params.get('engine') === 'google_flights_deals') return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+      });
+      return Promise.resolve(response({ best_flights: [{ price: 4200, flights: [{ departure_airport: { id: params.get('departure_id'), time: params.get('outbound_date') + ' 18:00' }, arrival_airport: { id: params.get('arrival_id') } }] }] }));
+    });
+    const pending = explore('flight', { ...query, departureDate: undefined, returnDate: undefined });
+    await vi.advanceTimersByTimeAsync(20_000);
+    const result = await pending;
+    expect(result.offers).toHaveLength(3);
+    expect(result.coverage.queries).toBe(4);
+    expect(result.warnings.join(' ')).toContain('estava indisponível');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('bounds a completely stalled flexible search and returns a timeout, not zero fares', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetch).mockImplementation((_input, options) => new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+    }));
+    const pending = explore('flight', { ...query, departureDate: undefined, returnDate: undefined });
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'PROVIDER_TIMEOUT', statusCode: 504 });
+    await vi.advanceTimersByTimeAsync(52_000);
+    await rejected;
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([401, 403, 429])('does not consume fallback requests after HTTP %s', async status => {
+    vi.mocked(fetch).mockResolvedValue(response({}, status));
+    await expect(explore('flight', { ...query, departureDate: undefined, returnDate: undefined })).rejects.toMatchObject({ code: status === 429 ? 'PROVIDER_QUOTA_EXCEEDED' : 'PROVIDER_AUTH_FAILED' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps successful date results when another sampled lookup fails', async () => {
+    let sample = 0;
+    vi.mocked(fetch).mockImplementation(async input => {
+      const params = new URL(String(input)).searchParams;
+      if (params.get('engine') === 'google_flights_deals') return response({}, 503);
+      if (++sample === 1) return response({}, 503);
+      return response({ best_flights: [{ price: 4200, flights: [{ departure_airport: { id: params.get('departure_id'), time: params.get('outbound_date') + ' 18:00' }, arrival_airport: { id: params.get('arrival_id') } }] }] });
+    });
+    const result = await explore('flight', { ...query, departureDate: undefined, returnDate: undefined });
+    expect(result.offers).toHaveLength(2);
+    expect(result.warnings.join(' ')).toContain('Algumas combinações');
   });
 
   it('falls back from an empty promotion feed to bounded route/date searches from the actual origin', async () => {

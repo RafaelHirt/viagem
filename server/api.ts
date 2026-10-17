@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ExploreResult, HotelQuery, Monitor, MonitorSummary, Observation, Status } from '../src/shared/types.ts';
+import type { ExploreResult, FlightQuery, HotelQuery, Monitor, MonitorSummary, Observation, Status } from '../src/shared/types.ts';
 import { getBaseline, getPriceDrop, validateMonitor } from '../src/shared/domain.ts';
 import { clearSessionCookie, createLoginLimiter, createSessionCookie, hasSession, isSameOrigin, passwordMatches } from './auth.ts';
 import { explore, getProviderStatus, ProviderError } from './providers.ts';
@@ -7,6 +7,8 @@ import { suggestHotels } from './suggestions.ts';
 import { getNotificationStatus, sendNotifications } from './notifications.ts';
 import type { Delivery } from './notifications.ts';
 import type { Storage } from './storage.ts';
+import { createSearchJobStore } from './search-jobs.ts';
+import type { SearchJob, SearchJobStore } from './search-jobs.ts';
 
 const MAX_BODY_BYTES = 20_000;
 const MAX_MONITORS = 10;
@@ -79,6 +81,9 @@ export interface ApiOptions {
   providerStatus?: typeof getProviderStatus;
   notify?: typeof sendNotifications;
   hotelSuggestions?: typeof suggestHotels;
+  searchJobs?: SearchJobStore;
+  /** Only the separate Netlify background function awaits long-running work. */
+  backgroundExecution?: boolean;
 }
 
 interface RunResult {
@@ -90,8 +95,8 @@ interface RunResult {
   message?: string;
 }
 
-async function runMonitor(storage: Storage, monitor: Monitor, search: typeof explore, notify: typeof sendNotifications): Promise<RunResult> {
-  const result = await search(monitor.kind, monitor.query);
+async function runMonitor(storage: Storage, monitor: Monitor, search: typeof explore, notify: typeof sendNotifications, searchOptions?: { budgetMs?: number }): Promise<RunResult> {
+  const result = await search(monitor.kind, monitor.query, searchOptions);
   const offer = result.offers.filter((candidate) => candidate.kind === monitor.kind && candidate.currency === 'BRL' && Number.isSafeInteger(candidate.price) && candidate.price > 0)
     .sort((first, second) => first.price - second.price)[0];
   const observations = await storage.listObservations(monitor.id);
@@ -126,6 +131,26 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
     ? 'A senha do painel foi recebida pelo servidor, mas tem menos de 12 caracteres. Altere DASHBOARD_PASSWORD no contexto Production do Netlify e faça um novo deploy.'
     : 'Configure DASHBOARD_PASSWORD no servidor com pelo menos 12 caracteres para habilitar o painel.';
   const mayAttemptLogin = createLoginLimiter();
+  let jobStore = options.searchJobs;
+  const jobs = (): SearchJobStore => jobStore ??= createSearchJobStore();
+  const executeJob = async (job: SearchJob): Promise<void> => {
+    try {
+      let result: unknown;
+      if ('monitorId' in job.payload) {
+        const monitor = await storage.getMonitor(job.payload.monitorId);
+        if (!monitor) throw new HttpError(404, 'Este alerta foi removido. Crie uma nova busca.');
+        result = await runMonitor(storage, monitor, search, notify);
+      } else {
+        result = await search(job.payload.kind, job.payload.query);
+      }
+      await jobs().complete(job.id, result);
+    } catch (error) {
+      const safe = error instanceof ProviderError ? { code: error.code, message: error.userMessage }
+        : error instanceof HttpError ? { code: 'SEARCH_JOB_UNAVAILABLE', message: error.message }
+          : { code: 'SEARCH_JOB_FAILED', message: 'Não conseguimos concluir esta busca. Tente novamente em alguns instantes.' };
+      await jobs().fail(job.id, safe);
+    }
+  };
   return async (request) => {
     try {
       const url = new URL(request.url);
@@ -153,6 +178,44 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
         return json({ authenticated: true }, 200, { 'Set-Cookie': createSessionCookie(password, development) });
       }
       if (!hasSession(request, password)) throw new HttpError(401, 'Entre com sua senha para acessar o painel.');
+      if (path === '/api/search-jobs' && method === 'POST') {
+        const body = await bodyOf(request);
+        let payload: SearchJob['payload'];
+        if ('monitorId' in body) {
+          if (typeof body.monitorId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(body.monitorId)) throw new HttpError(400, 'Informe um alerta válido.');
+          if (!await storage.getMonitor(body.monitorId)) throw new HttpError(404, 'Alerta não encontrado.');
+          payload = { monitorId: body.monitorId };
+        } else {
+          const criteria = validated({ id: 'explore', name: 'Pesquisa', kind: body.kind, query: body.query,
+            rule: { dropPercent: 20, windowDays: 60 }, channels: { telegram: false }, enabled: false, createdAt: new Date().toISOString() });
+          payload = criteria.kind === 'flight' ? { kind: 'flight', query: criteria.query as FlightQuery } : { kind: 'hotel', query: criteria.query as HotelQuery };
+        }
+        const job = await jobs().create(payload);
+        return json({ jobId: job.id, startUrl: development ? `/api/search-jobs/${job.id}/start` : '/.netlify/functions/search-background' }, 202);
+      }
+      const jobMatch = path.match(/^\/api\/search-jobs\/([A-Za-z0-9_-]+)(\/start)?$/);
+      if (jobMatch && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobMatch[1])) throw new HttpError(400, 'Identificador de busca inválido.');
+      if (jobMatch && !jobMatch[2] && method === 'GET') {
+        const job = await jobs().get(jobMatch[1]);
+        if (!job) throw new HttpError(404, 'Esta busca expirou ou não foi encontrada. Faça uma nova busca.');
+        return json({ status: job.status, ...(job.status === 'complete' ? { result: job.result } : {}), ...(job.status === 'failed' ? { error: job.error } : {}) });
+      }
+      const backgroundStart = path === '/.netlify/functions/search-background' && options.backgroundExecution === true;
+      if ((backgroundStart || (jobMatch?.[2] === '/start' && development)) && method === 'POST') {
+        const body = await bodyOf(request);
+        const jobId = body.jobId;
+        if (typeof jobId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId) || (jobMatch && jobMatch[1] !== jobId)) throw new HttpError(400, 'Identificador de busca inválido.');
+        const current = await jobs().get(jobId);
+        if (!current) throw new HttpError(404, 'Esta busca expirou ou não foi encontrada. Faça uma nova busca.');
+        // Strong atomic claim prevents duplicate browser requests or Netlify
+        // background retries from issuing a second paid provider search.
+        const claimed = current.status === 'pending' ? await jobs().claim(jobId) : undefined;
+        if (claimed) {
+          if (options.backgroundExecution) await executeJob(claimed);
+          else void executeJob(claimed).catch(() => { /* A storage failure leaves the claim in place; never repeat a paid search. */ });
+        }
+        return json({ accepted: true }, 202);
+      }
       if (path === '/api/suggestions/hotels' && method === 'GET') {
         return json(await hotelSuggestions(url.searchParams.get('q') ?? '', url.searchParams.get('location') ?? undefined));
       }
@@ -179,7 +242,7 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
           id: 'explore', name: 'Pesquisa', kind: body.kind, query: body.query,
           rule: { dropPercent: 20, windowDays: 60 }, channels: { telegram: false }, enabled: false, createdAt: new Date().toISOString(),
         });
-        return json(await search(monitor.kind, monitor.query));
+        return json(await search(monitor.kind, monitor.query, { budgetMs: 25_000 }));
       }
       if (path === '/api/history' && method === 'GET') {
         const monitorId = url.searchParams.get('monitorId') ?? '';
@@ -192,7 +255,7 @@ export function createApiHandler(options: ApiOptions): (request: Request) => Pro
       if (match) {
         const monitor = await storage.getMonitor(match[1]);
         if (!monitor) throw new HttpError(404, 'Monitor não encontrado.');
-        if (method === 'POST' && match[2] === '/run') return json(await runMonitor(storage, monitor, search, notify));
+        if (method === 'POST' && match[2] === '/run') return json(await runMonitor(storage, monitor, search, notify, { budgetMs: 25_000 }));
         if (!match[2] && method === 'PATCH') {
           const body = await bodyOf(request);
           if (typeof body.enabled !== 'boolean' || Object.keys(body).some((key) => key !== 'enabled')) {
@@ -224,10 +287,9 @@ export async function collectMonitors(storage: Storage): Promise<{ enabled: bool
   const eligible = monitors.filter((monitor) => monitor.kind === 'flight' ? providers.flights.configured : providers.hotels.configured);
   const offset = eligible.length ? (Math.floor(Date.now() / (12 * 60 * 60_000)) * MAX_SCHEDULED_MONITORS) % eligible.length : 0;
   const selected = Array.from({ length: Math.min(MAX_SCHEDULED_MONITORS, eligible.length) }, (_, index) => eligible[(offset + index) % eligible.length]);
-  const results: Array<{ monitorId: string; ok: boolean }> = [];
-  for (const monitor of selected) {
-    try { await runMonitor(storage, monitor, explore, sendNotifications); results.push({ monitorId: monitor.id, ok: true }); }
-    catch { results.push({ monitorId: monitor.id, ok: false }); }
-  }
+  const results = await Promise.all(selected.map(async (monitor) => {
+    try { await runMonitor(storage, monitor, explore, sendNotifications, { budgetMs: 25_000 }); return { monitorId: monitor.id, ok: true }; }
+    catch { return { monitorId: monitor.id, ok: false }; }
+  }));
   return { enabled: true, processed: selected.length, skipped: monitors.length - selected.length, results };
 }

@@ -87,3 +87,16 @@
   .area-map-empty { padding: 15px; flex-wrap: wrap; align-items: flex-start; }
   .area-map .area-map-create-button { margin-left: 27px; }
 }
+
+.area-map-nearby { margin-top: 13px; color: #6e8475; font-size: 11px; line-height: 1.6; }
+.area-map-catalog { margin-top: 9px; color: #819082; font-size: 11px; }
+.area-map-catalog summary { cursor: pointer; padding: 4px 0; }
+.area-map-catalog p { margin-top: 6px; line-height: 1.7; }
+.area-map-selection:not(.is-read-only) { cursor: grab; }
+.area-map-resize-border { fill: none; stroke: transparent; stroke-width: 28px; pointer-events: stroke; cursor: crosshair; }
+.area-map-center { cursor: grab; }
+.area-map-resize.horizontal { cursor: ew-resize; }
+.area-map-resize.vertical { cursor: ns-resize; }
+.area-map-resize:hover > circle:not(.area-map-resize-target) { fill: #e5f0d9; }
+.area-map-canvas > svg.is-dragging * { cursor: grabbing; }
+.area-map-move-target { fill: transparent; stroke: none; pointer-events: all; cursor: grab; }

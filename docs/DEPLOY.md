@@ -56,3 +56,11 @@ Nesta versão, candidatos SerpApi são mantidos como **não confirmados**, e a e
 6. Configurar canais e verificar destinatários; então validar um envio autorizado de teste.
 
 Nenhum pagamento, reserva, contratação ou envio real foi realizado na preparação deste repositório.
+
+## Consultas em segundo plano
+
+O deploy deve incluir `netlify/functions/search-background.ts`. O sufixo `-background` é parte do nome da função e permite que a busca continue depois da resposta inicial. A interface cria um job em `/api/search-jobs`, aciona o worker e consulta o estado autenticado. O worker usa a mesma senha/sessão e as mesmas verificações de origem; não há endpoint público para consultas pagas.
+
+O store privado `viagem-search-jobs-v1` usa leitura forte e gravação condicional para impedir execução duplicada. Jobs ficam acessíveis por dez minutos; essa expiração lógica não é uma política de exclusão física dos blobs. Não exige variável de acesso nova. Autenticação, Blobs, publicação do worker e uma busca real autenticada precisam ser conferidos no deploy antes de anunciar o serviço operacional.
+
+Validação local desta atualização: 96 testes automatizados passaram e o build TypeScript/Vite passou. O navegador verificou login, criação persistente, primeira consulta em segundo plano, preservação do alerta após falha, preços sem base presumida, rota/datas/duração, larguras de 390 a 1440 px, arraste da bolha e redimensionamento pela borda com mouse e toque. Ofertas de QA eram respostas simuladas somente no navegador; nenhuma tarifa real da conta foi confirmada nesta máquina, pois `SERPAPI_API_KEY` ainda não está vinculada ao ambiente cloud.

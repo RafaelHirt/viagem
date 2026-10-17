@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ExploreResult, FlightQuery, HotelQuery, Offer, Status } from '../src/shared/types';
+import type { ExploreResult, FlightQuery, FlightSegment, HotelQuery, Offer, Status } from '../src/shared/types';
 import { findAirport, haversineKm } from '../src/shared/domain';
 import { AIRPORTS, isAirportInArea, matchesRegion, REGIONS, searchAirports } from '../src/shared/airports.ts';
 import { airportInTrip, countriesInAreas, previewTrip } from '../src/shared/trip-planner.ts';
@@ -23,6 +23,7 @@ const record = (value: unknown): Json => value !== null && typeof value === 'obj
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const string = (value: unknown): string => typeof value === 'string' ? value : '';
 const positive = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+const nonnegativeInteger = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 
 function httpsLink(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -34,26 +35,44 @@ function httpsLink(value: unknown): string | undefined {
   } catch { return undefined; }
 }
 
-async function requestSerpApi(parameters: Record<string, string>): Promise<Json> {
+// The UI runs this search in a background job. Legacy synchronous callers use
+// a shorter budget. Discovery gets its own allowance so a slow recommendation
+// feed cannot prevent route/date searches; all samples share one deadline.
+const SEARCH_BUDGET_MS = 54_000;
+const DISCOVERY_TIMEOUT_MS = 20_000;
+const EXACT_TIMEOUT_MS = 45_000;
+const FALLBACK_TIMEOUT_MS = 32_000;
+type SearchBudget = { deadline: number };
+
+async function requestSerpApi(parameters: Record<string, string>, budget: SearchBudget, timeoutMs: number): Promise<Json> {
   const key = process.env.SERPAPI_API_KEY;
   if (!key) throw new ProviderError('PROVIDER_SETUP_REQUIRED', 'Configure SERPAPI_API_KEY no servidor para pesquisar passagens reais.');
   const url = new URL('https://serpapi.com/search.json');
   Object.entries(parameters).forEach(([name, value]) => url.searchParams.set(name, value));
   url.searchParams.set('api_key', key);
-  let response: Response;
+  const remaining = Math.min(timeoutMs, budget.deadline - Date.now());
+  if (remaining <= 0) throw new ProviderError('PROVIDER_TIMEOUT', 'A consulta demorou mais que o esperado. Tente novamente ou escolha uma cidade e datas para uma busca mais rápida.', 504);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), remaining);
   try {
-    response = await fetch(url, { signal: AbortSignal.timeout(15_000), headers: { Accept: 'application/json' }, cache: 'no-store' });
-  } catch {
-    throw new ProviderError('PROVIDER_UNAVAILABLE', 'A fonte de passagens não respondeu a tempo. Tente novamente mais tarde.', 502);
-  }
-  if (response.status === 401 || response.status === 403) throw new ProviderError('PROVIDER_AUTH_FAILED', 'A fonte de passagens recusou a credencial. Confira a configuração segura do servidor.', 502);
-  if (response.status === 429) throw new ProviderError('PROVIDER_QUOTA_EXCEEDED', 'A fonte de passagens atingiu o limite de consultas. Aguarde ou confira a cota da conta.', 429);
-  if (!response.ok) throw new ProviderError('PROVIDER_UNAVAILABLE', 'Não foi possível consultar a fonte de passagens agora.', 502);
-  let data: Json;
-  try { data = record(await response.json()); }
-  catch { throw new ProviderError('PROVIDER_INVALID_RESPONSE', 'A fonte de passagens retornou uma resposta inválida.', 502); }
-  if (data.error || string(record(data.search_metadata).status).toLowerCase() === 'error') throw new ProviderError('PROVIDER_SEARCH_FAILED', 'A fonte não concluiu esta pesquisa. Confira os aeroportos e as datas ou tente novamente.', 502);
-  return data;
+    const response = await fetch(url, { signal: controller.signal, headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (response.status === 401 || response.status === 403) throw new ProviderError('PROVIDER_AUTH_FAILED', 'A fonte de passagens recusou a credencial. Confira a configuração segura do servidor.', 502);
+    if (response.status === 429) throw new ProviderError('PROVIDER_QUOTA_EXCEEDED', 'A fonte de passagens atingiu o limite de consultas. Aguarde ou confira a cota da conta.', 429);
+    if (response.status === 408 || response.status === 504) throw new ProviderError('PROVIDER_TIMEOUT', 'A consulta demorou mais que o esperado. Tente novamente ou escolha uma cidade e datas para uma busca mais rápida.', 504);
+    if (!response.ok) throw new ProviderError('PROVIDER_UNAVAILABLE', 'Não foi possível consultar a fonte de passagens agora.', 502);
+    let data: Json;
+    try { data = record(await response.json()); }
+    catch (error) {
+      if (controller.signal.aborted) throw error;
+      throw new ProviderError('PROVIDER_INVALID_RESPONSE', 'A fonte de passagens retornou uma resposta inválida.', 502);
+    }
+    if (data.error || string(record(data.search_metadata).status).toLowerCase() === 'error') throw new ProviderError('PROVIDER_SEARCH_FAILED', 'A fonte não concluiu esta pesquisa. Confira os aeroportos e as datas ou tente novamente.', 502);
+    return data;
+  } catch (error) {
+    if (error instanceof ProviderError) throw error;
+    if (controller.signal.aborted || (error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name))) throw new ProviderError('PROVIDER_TIMEOUT', 'A consulta demorou mais que o esperado. Tente novamente ou escolha uma cidade e datas para uma busca mais rápida.', 504);
+    throw new ProviderError('PROVIDER_NETWORK_ERROR', 'Não foi possível conectar ao serviço de passagens. Tente novamente em alguns instantes.', 502);
+  } finally { clearTimeout(timer); }
 }
 
 function textKey(value: string): string { return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase(); }
@@ -66,6 +85,24 @@ function dateOnly(value: unknown): string {
   const text = string(value);
   const parsed = new Date(`${text}T00:00:00Z`);
   return /^\d{4}-\d{2}-\d{2}$/.test(text) && Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === text ? text : '';
+}
+
+function localDateTime(value: unknown): string | undefined {
+  const text = string(value);
+  if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$/.test(text) || !dateOnly(text.slice(0, 10))) return undefined;
+  return Number(text.slice(11, 13)) < 24 && Number(text.slice(14, 16)) < 60 ? text : undefined;
+}
+
+function flightSegments(segments: Json[]): FlightSegment[] {
+  return segments.flatMap(segment => {
+    const departure = record(segment.departure_airport);
+    const arrival = record(segment.arrival_airport);
+    const origin = string(departure.id).toUpperCase();
+    const destination = string(arrival.id).toUpperCase();
+    if (!/^[A-Z]{3}$/.test(origin) || !/^[A-Z]{3}$/.test(destination)) return [];
+    return [{ origin, destination, departureTime: localDateTime(departure.time), arrivalTime: localDateTime(arrival.time),
+      airline: string(segment.airline) || undefined, flightNumber: string(segment.flight_number) || undefined }];
+  });
 }
 
 export function getProviderStatus(): Status['providers'] {
@@ -144,6 +181,8 @@ function normalizeExact(data: Json, query: FlightQuery, entry: string): Offer[] 
     const extensions = array(candidate.extensions).filter((item): item is string => typeof item === 'string').slice(0, 8);
     return [{
       id: randomUUID(), kind: 'flight', title: `${findAirport(query.origin)?.city.split(' (')[0] || query.origin} → ${findAirport(entry)?.city.split(' (')[0] || entry}`, price, currency: 'BRL',
+      passengers: query.adults, priceBasis: 'unknown', itineraryStatus: 'outbound-only',
+      flightLegs: [{ direction: 'outbound', segments: flightSegments(segments), durationMinutes: positive(candidate.total_duration), stops: Math.max(0, segments.length - 1) }],
       outboundDate: query.departureDate, returnDate: query.returnDate, origin: actualOrigin,
       arrivalAirport: actualArrival, departureAirport: query.departureAirport || entry,
       airline: airlines.join(' + ') || undefined, url, observedAt, provider: 'SerpApi · Google Flights', confirmed: false,
@@ -173,7 +212,7 @@ function matchesDestination(deal: Json, query: FlightQuery): boolean {
   return searchAirports(query.destination, 100).some((item) => item.code === code);
 }
 
-async function exploreFlight(query: FlightQuery): Promise<ExploreResult> {
+async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadline: Date.now() + SEARCH_BUDGET_MS }, fallback = false): Promise<ExploreResult> {
   enforceDistance(query); // Reject incompatible pairs before consuming a query.
   if (query.tripPlan) {
     const preview = previewTrip(query.tripPlan);
@@ -197,7 +236,7 @@ async function exploreFlight(query: FlightQuery): Promise<ExploreResult> {
         { departure_id: exit, arrival_id: query.origin, date: query.returnDate },
       ]),
     } : { ...base, engine: 'google_flights', type: '1', departure_id: query.origin, arrival_id: entry, outbound_date: query.departureDate, return_date: query.returnDate };
-    const data = await requestSerpApi(parameters);
+    const data = await requestSerpApi(parameters, budget, fallback ? FALLBACK_TIMEOUT_MS : EXACT_TIMEOUT_MS);
     verifyCurrency(data);
     if (!Array.isArray(data.best_flights) && !Array.isArray(data.other_flights)) throw new ProviderError('PROVIDER_INVALID_RESPONSE', 'Não conseguimos ler os preços retornados. Tente novamente em alguns minutos.', 502);
     const offers = addTripPreviews(normalizeExact(data, query, entry), query);
@@ -215,10 +254,22 @@ async function exploreFlight(query: FlightQuery): Promise<ExploreResult> {
   const endDate = end.toISOString().slice(0, 10);
   // Deals is a recommendation feed, not a route inventory. Target the destination
   // in its documented natural-language query; query cannot coexist with trip_length.
-  const data = fixedOpenJaw ? { deals: [] } : await requestSerpApi({ ...base, engine: 'google_flights_deals', type: '1', departure_id: query.origin,
-    outbound_date: `${startDate},${endDate}`, query: discoveryText(query) });
-  verifyCurrency(data);
-  if (!Array.isArray(data.deals)) throw new ProviderError('PROVIDER_INVALID_RESPONSE', 'A busca retornou uma resposta que não conseguimos interpretar. Tente novamente ou consulte uma cidade com datas definidas.', 502);
+  let data: Json = { deals: [] };
+  let discoveryFailure: ProviderError | undefined;
+  if (!fixedOpenJaw) {
+    try {
+      data = await requestSerpApi({ ...base, engine: 'google_flights_deals', type: '1', departure_id: query.origin,
+        outbound_date: `${startDate},${endDate}`, query: discoveryText(query) }, budget, DISCOVERY_TIMEOUT_MS);
+      verifyCurrency(data);
+      if (!Array.isArray(data.deals)) throw new ProviderError('PROVIDER_INVALID_RESPONSE', 'A busca retornou uma resposta que não conseguimos interpretar. Tente novamente ou consulte uma cidade com datas definidas.', 502);
+    } catch (error) {
+      // Trying another engine cannot repair an invalid credential, depleted
+      // quota or a currency mismatch; do not spend more requests in those cases.
+      if (!(error instanceof ProviderError) || ['PROVIDER_AUTH_FAILED', 'PROVIDER_QUOTA_EXCEEDED', 'PROVIDER_INVALID_CURRENCY', 'PROVIDER_SETUP_REQUIRED'].includes(error.code)) throw error;
+      discoveryFailure = error;
+      data = { deals: [] };
+    }
+  }
   let discarded = 0;
   const observedAt = new Date().toISOString();
   const candidates = array(data.deals).flatMap((value): Offer[] => {
@@ -230,6 +281,8 @@ async function exploreFlight(query: FlightQuery): Promise<ExploreResult> {
     const airport = string(deal.arrival_airport_code).toUpperCase();
     if (price === undefined || !outboundDate || !returnDate || outboundDate < startDate || outboundDate > endDate || !Number.isInteger(duration) || duration < query.minDays || duration > query.maxDays || string(deal.departure_airport_code).toUpperCase() !== query.origin || !/^[A-Z]{3}$/.test(airport) || !matchesDestination(deal, query)) { discarded++; return []; }
     return [{ id: randomUUID(), kind: 'flight', title: `${findAirport(query.origin)?.city.split(' (')[0] || query.origin} → ${string(deal.name) || findAirport(airport)?.city || airport}`, price, currency: 'BRL',
+      passengers: query.adults, priceBasis: 'unknown', itineraryStatus: 'round-trip-dates',
+      flightLegs: [{ direction: 'outbound', segments: [], durationMinutes: positive(deal.flight_duration), stops: nonnegativeInteger(deal.stops) }],
       outboundDate, returnDate, origin: query.origin, arrivalAirport: airport, departureAirport: airport,
       airline: string(deal.airline) || undefined, url: httpsLink(deal.flight_link), details: [`${duration} dias`, `${query.adults} adulto(s) na pesquisa`, 'Chegada e saída pelo mesmo aeroporto; tarifa ainda não confirmada'],
       observedAt, provider: 'SerpApi · Google Flights Deals', confirmed: false }];
@@ -240,13 +293,20 @@ async function exploreFlight(query: FlightQuery): Promise<ExploreResult> {
   if (!offers.length) {
     const samples = sampleQueries(query, start, end);
     combinations = samples.length;
-    const attempts = await Promise.allSettled(samples.map(sample => exploreFlight(sample)));
+    const attempts = await Promise.allSettled(samples.map(sample => exploreFlight(sample, budget, true)));
     queries += samples.length;
     const failures = attempts.filter(result => result.status === 'rejected');
     offers = attempts.flatMap(result => result.status === 'fulfilled' ? result.value.offers : []).sort((a, b) => a.price - b.price);
-    if (!offers.length && failures.length) throw new ProviderError('PROVIDER_SEARCH_FAILED', 'Não conseguimos concluir a consulta de preços. Isso não significa que não existam passagens. Tente novamente em alguns minutos.', 502);
+    if (!offers.length && failures.length) {
+      const reasons = failures.map(result => result.reason).filter((reason): reason is ProviderError => reason instanceof ProviderError);
+      const important = reasons.find(reason => ['PROVIDER_AUTH_FAILED', 'PROVIDER_QUOTA_EXCEEDED'].includes(reason.code)) ||
+        reasons.find(reason => ['PROVIDER_TIMEOUT', 'PROVIDER_NETWORK_ERROR'].includes(reason.code));
+      if (important) throw important;
+      throw new ProviderError('PROVIDER_SEARCH_FAILED', 'Não conseguimos concluir a consulta de preços. Isso não significa que não existam passagens. Tente novamente em alguns minutos.', 502);
+    }
+    if (!offers.length && discoveryFailure && !samples.length) throw discoveryFailure;
     if (failures.length) warnings.push('Algumas combinações não puderam ser consultadas. Os preços exibidos correspondem às consultas concluídas.');
-    if (samples.length) warnings.push('Como a seleção de promoções não trouxe opções compatíveis, consultamos combinações de datas e aeroportos dentro das suas preferências.');
+    if (samples.length) warnings.push(discoveryFailure ? 'A seleção de promoções estava indisponível. Consultamos diretamente combinações de datas e aeroportos dentro das suas preferências.' : 'Como a seleção de promoções não trouxe opções compatíveis, consultamos combinações de datas e aeroportos dentro das suas preferências.');
   }
   if (query.tripPlan) warnings.push('Foram avaliados no máximo os 20 candidatos aéreos mais baratos da amostra. Somente candidatos com uma prévia geográfica compatível são exibidos. Não é uma busca exaustiva de itinerários ou tarifas multicidade.');
   if (discarded) warnings.push(`${discarded} resultado(s) foram descartados por não comprovar os aeroportos, destino, moeda ou duração solicitados.`);
@@ -255,9 +315,9 @@ async function exploreFlight(query: FlightQuery): Promise<ExploreResult> {
   warnings.push('A janela foi enviada à fonte, mas a cobertura de cada mês e de todas as combinações não é garantida. Esta amostra não alimenta a média histórica nem dispara alertas.');
   return { offers, coverage: { complete: false, queries, requestedHorizonMonths: query.horizonMonths,
     description: combinations ? `Preços consultados em ${combinations} combinações de datas e aeroportos. Não representa todas as datas do período escolhido.` : 'Seleção de preços para as suas preferências. Não representa todas as datas do período escolhido.' }, warnings,
-    search: { received: data.deals.length, matched: offers.length, sampled: combinations > 0, combinations,
+    search: { received: array(data.deals).length, matched: offers.length, sampled: combinations > 0, combinations,
       message: offers.length ? (combinations ? 'Encontramos opções em algumas combinações de datas. Você pode ajustar as preferências para comparar outras.' : 'Preços disponíveis para as preferências escolhidas.')
-        : data.deals.length ? 'Os preços recebidos não corresponderam às suas preferências. Isso não significa que não existam passagens.' : 'A seleção de promoções e as combinações consultadas não trouxeram preços. Isso não significa que não existam passagens para esse destino.' } };
+        : array(data.deals).length ? 'Os preços recebidos não corresponderam às suas preferências. Isso não significa que não existam passagens.' : 'A seleção de promoções e as combinações consultadas não trouxeram preços. Isso não significa que não existam passagens para esse destino.' } };
 }
 
 const REGION_SEARCH: Record<string, string> = { 'europe': 'Europe', 'brazil': 'Brazil', 'south-america': 'South America', 'north-america': 'North America', 'central-america': 'Central America and the Caribbean', 'asia': 'Asia', 'africa': 'Africa', 'oceania': 'Oceania', 'anywhere': 'anywhere' };
@@ -310,7 +370,8 @@ function addTripPreviews(offers: Offer[], query: FlightQuery): Offer[] {
   });
 }
 
-export async function explore(kind: 'flight' | 'hotel', query: FlightQuery | HotelQuery): Promise<ExploreResult> {
+export async function explore(kind: 'flight' | 'hotel', query: FlightQuery | HotelQuery, options: { budgetMs?: number } = {}): Promise<ExploreResult> {
   if (kind === 'hotel') throw new ProviderError('BOOKING_ADAPTER_PENDING', 'Booking é a fonte escolhida para hotéis. A conexão autenticada e o adaptador de preços ainda precisam ser disponibilizados neste servidor.');
-  return exploreFlight(query as FlightQuery);
+  const budgetMs = Number.isFinite(options.budgetMs) ? Math.max(1, Math.min(SEARCH_BUDGET_MS, options.budgetMs!)) : SEARCH_BUDGET_MS;
+  return exploreFlight(query as FlightQuery, { deadline: Date.now() + budgetMs });
 }

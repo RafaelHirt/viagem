@@ -63,3 +63,7 @@
  .trip-leg > svg { display: none; }
  .trip-stop strong { font-size: 13px; }
 }
+
+.trip-country-picker > summary { cursor: pointer; color: #41634f; font-size: 12px; font-weight: 600; }
+.trip-country-picker > summary > span { font-weight: 400; color: #879780; }
+.trip-country-picker > p { margin-top: 14px; }

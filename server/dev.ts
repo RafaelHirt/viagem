@@ -2,9 +2,11 @@ import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 import { createApiHandler } from './api.ts';
 import { createFileStorage } from './storage.ts';
+import { createFileSearchJobStore } from './search-jobs.ts';
 
 const handler = createApiHandler({
   storage: createFileStorage('.local/data'),
+  searchJobs: createFileSearchJobStore('.local/data/search-jobs'),
   development: true,
   password: process.env.DASHBOARD_PASSWORD || 'viagem-local',
 });
