@@ -86,6 +86,8 @@ interface RunResult {
   coverage: ExploreResult['coverage'];
   warnings: string[];
   notifications: Delivery[];
+  found: number;
+  message?: string;
 }
 
 async function runMonitor(storage: Storage, monitor: Monitor, search: typeof explore, notify: typeof sendNotifications): Promise<RunResult> {
@@ -112,7 +114,7 @@ async function runMonitor(storage: Storage, monitor: Monitor, search: typeof exp
       warnings.push(`Alertas aguardam pelo menos ${minimumHistoryDays()} dias históricos válidos. Há ${baseline.validDays} dias disponíveis.`);
     }
   }
-  return { summary: await summarizeMonitor(storage, monitor), coverage: result.coverage, warnings, notifications: deliveries };
+  return { summary: await summarizeMonitor(storage, monitor), coverage: result.coverage, warnings, notifications: deliveries, found: result.offers.length, message: result.search?.message };
 }
 
 export function createApiHandler(options: ApiOptions): (request: Request) => Promise<Response> {

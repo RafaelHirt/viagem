@@ -40,9 +40,9 @@ Se a chave aérea aparecer presente mas o painel continuar bloqueado pela senha,
 
 A tarefa está configurada para 11h e 23h UTC, correspondentes a 8h e 20h em São Paulo no fuso atual. O agendador deve permanecer desligado enquanto a fonte não estiver validada para o uso pretendido.
 
-O coletor processa no máximo dois monitores habilitados por rodada. Na versão inicial, cada pesquisa faz uma chamada de descoberta; isso representa até quatro chamadas agendadas por dia. Pesquisas manuais consomem consultas adicionais. Essa contagem não é uma garantia de cobertura anual nem um limitador global da franquia do fornecedor.
+O coletor processa no máximo dois monitores habilitados por rodada. Uma pesquisa flexível pode fazer uma chamada de descoberta e, se não houver resultados compatíveis, até três consultas de combinações de aeroportos e datas. São até quatro chamadas por pesquisa; com dois monitores em duas rodadas, até 16 chamadas por dia. Um par multicidade fixo com datas livres usa até três combinações. Pesquisas manuais consomem consultas adicionais. Essa contagem não é uma garantia de cobertura anual nem um limitador global da franquia do fornecedor.
 
-O fornecedor publica 250 consultas mensais no plano gratuito. Uma descoberta duas vezes por dia dá até 60 consultas por monitor em 30 dias; confirmações, seleção de retorno e pesquisas manuais podem custar mais. Confira a cota na conta antes de ampliar a coleta.
+O fornecedor publica 250 consultas mensais no plano gratuito. No pior caso, um monitor duas vezes por dia pode usar 240 chamadas em 30 dias com a busca alternativa, antes de consultas manuais ou confirmações adicionais. Dois monitores podem ultrapassar essa franquia. Mantenha o agendador desligado até definir uma coleta compatível com a cota e validar tarifas.
 
 Nesta versão, candidatos SerpApi são mantidos como **não confirmados**, e a exploração flexível informa cobertura parcial. Esses resultados não alimentam uma média comparável nem disparam alertas reais. O transportador de notificações só deve enviar uma oferta confirmada, com histórico válido e queda suficiente. O mínimo inicial implementado é sete dias válidos; o painel mostra o tamanho real da amostra.
 

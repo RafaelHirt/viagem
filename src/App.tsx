@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import QueryWizard, { initialFlight, initialHotel, type FlightDraft, type HotelDraft } from "./components/QueryWizard";
 import { labelAirport, findAirport } from "./shared/airports";
 import SetupGuide from "./components/SetupGuide";
@@ -45,6 +45,8 @@ import type {
   Offer,
   Status,
 } from "./shared/types";
+
+const SavedSearchMap = lazy(() => import("./components/SavedSearchMap"));
 
 type Tab = "overview" | "explore" | "monitors" | "settings";
 type Kind = "flight" | "hotel";
@@ -171,12 +173,12 @@ function OfferCard({ offer }: { offer: Offer }) {
         <span className="offer-icon">
           <Icon size={21} />
         </span>
-        <span className="eyebrow">{offer.provider}</span>
+        <span className="eyebrow">{offer.kind === "flight" ? "Passagem aérea" : "Hospedagem"}</span>
         <span className={`confirmation ${offer.confirmed ? "confirmed" : ""}`}>
           {offer.confirmed ? <CheckCircle2 size={13} /> : <Info size={13} />}
           {offer.confirmed
-            ? "Preço confirmado pela fonte"
-            : "Preço a confirmar"}
+            ? "Preço verificado"
+            : "Confira o valor final no vendedor"}
         </span>
       </div>
       <h3>{offer.title}</h3>
@@ -196,11 +198,7 @@ function OfferCard({ offer }: { offer: Offer }) {
             : ""}
         </p>
       )}
-      <ul className="offer-details">
-        {offer.details.map((detail, i) => (
-          <li key={i}>{detail}</li>
-        ))}
-      </ul>
+      <details className="offer-conditions"><summary>Detalhes da passagem</summary><ul className="offer-details">{offer.details.map((detail, i) => <li key={i}>{detail}</li>)}</ul></details>
       {offer.tripPreview && <TripSummary preview={offer.tripPreview} transport={offer.tripPreview.transport} />}
       <div className="offer-bottom">
         <div>
@@ -259,6 +257,8 @@ export default function App() {
   const [runReport, setRunReport] = useState<{
     coverage: Coverage;
     warnings: string[];
+    found?: number;
+    message?: string;
     notifications?: { channel: string; status: string }[];
   } | null>(null);
 
@@ -281,6 +281,7 @@ export default function App() {
   useEffect(() => {
     void reload();
   }, []);
+  useEffect(() => { if (results) document.getElementById('search-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [results]);
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(""), 6000);
@@ -416,7 +417,7 @@ export default function App() {
       setToast(
         saved.additionalMonitors?.length
           ? "Alertas criados com históricos separados para semana e fim de semana."
-          : "Alerta criado. A referência de preço será construída com as consultas.",
+          : status?.collection?.enabled ? "Busca salva. O histórico começa com as consultas." : "Busca salva. A atualização automática ainda precisa ser ativada.",
       );
     } catch (e) {
       setError((e as Error).message);
@@ -437,13 +438,13 @@ export default function App() {
           summary: MonitorSummary;
           coverage: Coverage;
           warnings: string[];
+          found?: number;
+          message?: string;
           notifications?: { channel: string; status: string }[];
         }>(`/monitors/${id}/run`, { method: "POST" });
         setRunReport(report);
         setToast(
-          report.coverage.queries > 0
-            ? "Consulta concluída. Confira a cobertura e as condições."
-            : "Nenhuma consulta realizada. Confira os avisos da fonte.",
+          report.found ? "Preços atualizados para esta busca." : "Esta consulta não trouxe preços. Você pode tentar outras datas ou destinos.",
         );
       } else if (action === "toggle")
         await api(`/monitors/${id}`, {
@@ -521,8 +522,6 @@ export default function App() {
       setResults(null);
     },
   };
-  const selectedProvider =
-    kind === "flight" ? status?.providers.flights : status?.providers.hotels;
 
   if (status?.authConfigured && !status.authenticated)
     return (
@@ -827,7 +826,7 @@ export default function App() {
                         <span>
                           {status.collection?.enabled
                             ? "Coleta automática habilitada"
-                            : "Coleta automática aguardando ativação"}
+                            : "Atualização automática ainda não ativada"}
                         </span>
                       </div>
                     </article>
@@ -1057,68 +1056,9 @@ export default function App() {
                   </div>
                   <div className="explore-layout">
                     <section className="panel search-panel">
-                      <QueryWizard mode="explore" {...queryProps} submitting={submitting} onSubmit={explore} onKindChange={(value) => { setKind(value); setResults(null); setExploreError(""); }} />
+                      {results ? <div className="search-recap"><div><strong>{kind === 'flight' ? `${findAirport(flight.origin)?.city || flight.origin} → ${flight.destination}` : hotel.property}</strong><p>{kind === 'flight' ? `${flight.minDays} a ${flight.maxDays} dias · próximos ${flight.horizonMonths} meses` : `Próximos ${hotel.horizonMonths} meses`}</p></div><button className="button button-secondary" onClick={() => { setResults(null); setExploreError(""); }}>Alterar busca</button></div> : <QueryWizard mode="explore" {...queryProps} submitting={submitting} onSubmit={explore} onKindChange={(value) => { setKind(value); setResults(null); setExploreError(""); }} />}
                     </section>
-                    <aside className="explore-aside">
-                      <div className="panel search-tip">
-                        <span className="tip-icon">
-                          <Sparkles size={23} />
-                        </span>
-                        <h3>
-                          Uma data diferente.
-                          <br />
-                          Uma nova possibilidade.
-                        </h3>
-                        <p>
-                          Quanto mais flexibilidade, mais combinações podemos
-                          avaliar para encontrar preços melhores.
-                        </p>
-                        <div className="tip-divider" />
-                        <span className="eyebrow">SOBRE ESTA BUSCA</span>
-                        <ul>
-                          <li>
-                            <Check size={15} />
-                            Valores em reais
-                          </li>
-                          <li>
-                            <Check size={15} />
-                            Sem orçamento obrigatório
-                          </li>
-                          <li>
-                            <Check size={15} />
-                            Cobertura informada no resultado
-                          </li>
-                          <li>
-                            <Check size={15} />
-                            Sem ativar alertas automaticamente
-                          </li>
-                        </ul>
-                      </div>
-                      <div className="provider-mini">
-                        <span className="eyebrow">FONTE DE PREÇOS</span>
-                        <strong>
-                          {selectedProvider?.name ||
-                            (kind === "flight" ? "Passagens aéreas" : "Hotéis")}
-                        </strong>
-                        <StatusPill
-                          configured={Boolean(selectedProvider?.configured)}
-                          text={
-                            selectedProvider?.configured
-                              ? "Chave configurada"
-                              : "Configuração necessária"
-                          }
-                        />
-                        {!selectedProvider?.configured && (
-                          <button
-                            className="text-button"
-                            onClick={() => navigate("settings")}
-                          >
-                            Como conectar
-                            <ArrowRight size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </aside>
+
                   </div>
                   {exploreError && (
                     <div className="error-message" role="alert">
@@ -1137,17 +1077,14 @@ export default function App() {
                     </div>
                   )}
                   {results && (
-                    <section className="results-section">
+                    <section className="results-section" id="search-results">
                       <div className="section-heading">
                         <div>
                           <span className="eyebrow">
                             RESULTADO DA SUA PESQUISA
                           </span>
                           <h2>
-                            {results.offers.length}{" "}
-                            {results.offers.length === 1
-                              ? "oportunidade encontrada"
-                              : "oportunidades encontradas"}
+                            {results.offers.length ? `${results.offers.length} ${results.offers.length === 1 ? 'passagem encontrada' : 'passagens encontradas'}` : 'Não encontramos preços nesta busca'}
                           </h2>
                         </div>
                         <button
@@ -1158,38 +1095,8 @@ export default function App() {
                           Criar alerta desta busca
                         </button>
                       </div>
-                      <div
-                        className={`coverage-note ${results.coverage.complete ? "complete" : ""}`}
-                      >
-                        <Info size={18} />
-                        <div>
-                          <strong>
-                            {results.coverage.complete
-                              ? "Cobertura da consulta"
-                              : "Consulta com cobertura parcial"}
-                          </strong>
-                          <p>{results.coverage.description}</p>
-                          <small>
-                            {results.coverage.queries}{" "}
-                            {results.coverage.queries === 1
-                              ? "consulta realizada"
-                              : "consultas realizadas"}
-                            {results.coverage.availableHorizonMonths
-                              ? ` · horizonte disponível: ${results.coverage.availableHorizonMonths} meses`
-                              : ""}
-                          </small>
-                        </div>
-                      </div>
-                      {results.warnings.length > 0 && (
-                        <ul className="result-warnings">
-                          {results.warnings.map((warning, i) => (
-                            <li key={i}>
-                              <Info size={14} />
-                              {warning}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
+                      {results.offers.length > 0 && <p className="search-results-note">{results.search?.message || 'Preços encontrados para as datas consultadas.'} Confira o valor final, bagagem e condições antes de comprar.</p>}
+                      <details className="search-explanation"><summary>Sobre esta busca</summary><p>{results.coverage.description}</p>{results.warnings.length > 0 && <ul>{results.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul>}</details>
                       {results.offers.length ? (
                         <div className="offers-grid">
                           {results.offers.map((offer) => (
@@ -1200,13 +1107,11 @@ export default function App() {
                         <div className="panel result-empty">
                           <Search size={28} />
                           <h3>
-                            Nenhuma oferta retornada para estas condições.
+                            Vamos tentar outras combinações?
                           </h3>
                           <p>
-                            Tente ampliar as datas, a região ou a duração da
-                            viagem. A disponibilidade depende da fonte
-                            consultada.
-                          </p>
+                            {results.search?.message || 'Não recebemos preços compatíveis nesta consulta. Isso não significa que não existam passagens para esse destino.'}
+                          </p><button className="button button-primary" onClick={() => setResults(null)}>Ajustar destino e datas</button>
                         </div>
                       )}
                     </section>
@@ -1222,7 +1127,7 @@ export default function App() {
                       </span>
                       <h1>
                         {createMonitor
-                          ? "Uma nova oportunidade começa aqui"
+                          ? "Criar alerta"
                           : "Meus alertas"}
                         <span className="heading-dot">.</span>
                       </h1>
@@ -1232,23 +1137,16 @@ export default function App() {
                           : "Acompanhe a evolução dos preços e descubra a hora de partir."}
                       </p>
                     </div>
-                    {!createMonitor && (
-                      <button
-                        className="button button-primary"
-                        onClick={() => openCreate()}
-                      >
-                        <Plus size={18} />
-                        Criar alerta
-                      </button>
-                    )}
+
                   </div>
+                  {!createMonitor && <div className="alert-create-entry"><div><strong>Quer acompanhar uma nova viagem?</strong><p>Escolha o destino no mapa e defina quando quer receber um aviso.</p></div><button className="button button-primary" onClick={() => openCreate()}><Plus size={18} />Novo alerta</button></div>}
                   {!status.collection?.enabled && (
                     <div className="collection-banner">
                       <CalendarDays size={19} />
                       <div>
-                        <strong>Coleta automática aguardando ativação</strong>
+                        <strong>Atualização automática ainda não ativada</strong>
                         <p>
-                          Seus alertas ainda não consultam preços automaticamente. Confira a ativação em Configurações; enquanto isso, você pode consultar cada alerta manualmente.
+                          Suas buscas estão salvas. Por enquanto, use Consultar preços para atualizá-las manualmente.
                         </p>
                         <button type="button" className="text-button" onClick={() => navigate("settings")}>Ver configurações <ArrowRight size={14} /></button>
                       </div>
@@ -1260,17 +1158,9 @@ export default function App() {
                         <Info size={18} />
                         <div>
                           <strong>
-                            {runReport.coverage.queries > 0
-                              ? "Resultado da última consulta"
-                              : "Nenhuma consulta realizada"}
+                            {runReport.found ? 'Preços atualizados' : 'Esta consulta não trouxe preços'}
                           </strong>
-                          <p>{runReport.coverage.description}</p>
-                          <small>
-                            {runReport.coverage.queries} consultas à fonte ·{" "}
-                            {runReport.coverage.complete
-                              ? "cobertura completa"
-                              : "cobertura parcial"}
-                          </small>
+                          <p>{runReport.message || 'Confira os preços encontrados nas datas consultadas. A busca não representa todas as datas possíveis.'}</p>
                         </div>
                         <button
                           className="icon-button"
@@ -1280,16 +1170,7 @@ export default function App() {
                           <X size={16} />
                         </button>
                       </div>
-                      {runReport.warnings.length > 0 && (
-                        <ul className="result-warnings">
-                          {runReport.warnings.map((warning, i) => (
-                            <li key={i}>
-                              <Info size={14} />
-                              {warning}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
+                      {runReport.warnings.length > 0 && <details className="search-explanation"><summary>Sobre esta atualização</summary><p>{runReport.coverage.description}</p><ul>{runReport.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></details>}
                       {runReport.notifications?.map((notification, i) => (
                         <p className="notification-note" key={i}>
                           {notification.channel === "email"
@@ -1463,9 +1344,7 @@ export default function App() {
                         </div>
                         <span className="muted-small">
                           {activeCount}{" "}
-                          {activeCount === 1
-                            ? "alerta habilitado"
-                            : "alertas habilitados"}
+                          {status.collection?.enabled ? activeCount === 1 ? 'alerta habilitado' : 'alertas habilitados' : activeCount === 1 ? 'busca salva' : 'buscas salvas'}
                         </span>
                       </div>
                       {filteredMonitors.length === 0 ? (
@@ -1514,12 +1393,8 @@ export default function App() {
                                   )}
                                 </span>
                                 <StatusPill
-                                  configured={item.monitor.enabled}
-                                  text={
-                                    item.monitor.enabled
-                                      ? "Habilitado"
-                                      : "Pausado"
-                                  }
+                                  configured={item.monitor.enabled && Boolean(status.collection?.enabled)}
+                                  text={!item.monitor.enabled ? 'Pausado' : status.collection?.enabled ? 'Aguardando histórico' : 'Atualização manual'}
                                 />
                                 <button
                                   className="icon-button danger-button"
@@ -1537,7 +1412,7 @@ export default function App() {
                               </p>
                               <div className="monitor-price">
                                 <div>
-                                  <span>Último menor preço</span>
+                                  <span>Último preço encontrado</span>
                                   <strong>
                                     {item.latest
                                       ? money(item.latest.price)
@@ -1596,6 +1471,7 @@ export default function App() {
                                   {dateTime(item.latest.observedAt)}
                                 </span>
                               )}
+                              {item.monitor.kind === 'flight' && <details className="saved-search-map"><summary>Ver busca no mapa</summary><Suspense fallback={<p>Carregando mapa…</p>}><SavedSearchMap query={item.monitor.query as FlightQuery} /></Suspense></details>}
                               <div className="monitor-card-actions">
                                 <button
                                   className="button button-secondary button-small"
@@ -1609,7 +1485,7 @@ export default function App() {
                                   ) : (
                                     <RefreshCw size={14} />
                                   )}
-                                  Consultar
+                                  Consultar preços
                                 </button>
                                 <button
                                   className="text-button"

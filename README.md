@@ -41,9 +41,9 @@ Consulte [Publicação e configuração](docs/DEPLOY.md) para as variáveis de f
 
 ## Limites atuais
 
-A documentação, os parâmetros e o adaptador da SerpApi foram verificados; **a busca autenticada ainda precisa ser executada com uma chave válida**. A fonte tem um plano gratuito publicado de 250 consultas por mês, sujeito às condições atuais. Nenhum plano foi contratado.
+A documentação e os testes do adaptador foram verificados; **a busca corrigida ainda precisa ser validada de ponta a ponta com a chave real**. A chave cadastrada no Netlify não está disponível automaticamente no ambiente cloud de desenvolvimento. A fonte tem um plano gratuito publicado de 250 consultas por mês, sujeito às condições atuais. Nenhum plano foi contratado.
 
-Os resultados de passagens desta versão são candidatos: a sequência completa de seleção do retorno e confirmação das opções de compra ainda não está implementada. Portanto não geram alertas de preço confirmado. A exploração flexível é uma amostra de ida e volta pela mesma cidade; não cobre exaustivamente um ano nem todos os pares de entrada e saída. Consultas exatas suportam o formato multicidade.
+Os resultados de passagens desta versão são candidatos: a sequência completa de seleção do retorno e confirmação das opções de compra ainda não está implementada. Portanto não geram alertas de preço confirmado. A exploração flexível direciona o destino ao buscador de promoções e filtra os resultados pelas preferências. Sem resultados compatíveis, consulta até três combinações de datas/aeroportos; pares fixos diferentes podem usar multicidade. Continua sendo uma amostra, sem cobertura exaustiva de um ano ou de todos os pares de entrada e saída.
 
 Booking permanece a fonte de hotéis escolhida pelo usuário. O autocomplete pesquisa um índice privado quando houver um catálogo real importado; sem ele, informa que o nome não foi validado e bloqueia a seleção. O acesso de parceiro, a importação do catálogo e o adaptador autenticado de preços continuam pendentes. Não existe consulta de hotel fictícia no lugar dessa integração.
 

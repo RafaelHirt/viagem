@@ -130,4 +130,15 @@ Os resultados `deals` podem incluir `price`, `average_price`, `discount_percenta
 4. Teste de cobertura de descoberta e datas futuras, registrando chamadas consumidas e intervalo efetivamente pesquisado.
 5. Persistência do histórico próprio, teto de cota e agendador antes de chamar o monitor de automático; e-mail e Telegram antes de chamar alertas de ativos.
 
-O usuário informou que a fonte de hotel já deu certo; esta verificação ficou restrita a passagens e não revalidou a integração de hotéis.
+Booking foi escolhido como fonte de hotéis pelo usuário; isso não comprova uma conexão existente. O conector de preços continua pendente, conforme docs/HOTEIS.md.
+
+
+## Correção do resultado vazio e da interface
+
+O usuário relatou uma consulta autenticada de Goiânia para Europa com zero resultados. O ambiente cloud não dispõe da chave configurada no Netlify, portanto não foi possível inspecionar a resposta autenticada original nem confirmar uma causa única para esse retorno específico.
+
+Foram identificados dois defeitos reproduzíveis no código: a descoberta não enviava o destino ao mecanismo de promoções (filtrava Europa apenas depois), e a ausência de `deals` na resposta era convertida em lista vazia sem acusar incompatibilidade. A versão corrigida usa `query` com região/país/cidade e duração, sem combiná-lo com `trip_length`, e exige a coleção documentada. O mesmo cuidado é aplicado às coleções de passagens com datas exatas.
+
+Se a descoberta válida não trouxer opções compatíveis, são consultadas até três combinações de aeroportos e datas dentro do período e duração pedidos. Para Europa, os primeiros aeroportos de referência são Lisboa, Paris e Madri, respeitando filtros adicionais. São amostras, não varredura de todos os dias ou garantia de menor preço. Falhas dessas consultas não são apresentadas como inexistência de passagens. A interface distingue ausência de preços na consulta de falha da fonte e esconde detalhes técnicos em conteúdo secundário.
+
+Testes controlados cobrem resposta sem coleção, promoções vazias com passagens disponíveis nas combinações consultadas, preservação de origem/passageiros, três combinações multicidade e falhas na alternativa. A UI foi exercitada no navegador com respostas explicitamente simuladas; criação e persistência de alerta foram exercitadas com a API local real. Isso não substitui a validação autenticada de preços na produção.

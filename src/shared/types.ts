@@ -130,6 +130,13 @@ export interface ExploreResult {
   offers: Offer[]
   coverage: Coverage
   warnings: string[]
+  search?: {
+    received: number
+    matched: number
+    sampled: boolean
+    combinations: number
+    message: string
+  }
 }
 
 export interface Status {

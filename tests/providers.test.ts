@@ -125,15 +125,51 @@ describe('real price provider adapter', () => {
     expect(result.warnings.some((warning) => warning.includes('4 resultado(s)'))).toBe(true);
     const url = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
     expect(url.searchParams.get('engine')).toBe('google_flights_deals');
-    expect(url.searchParams.get('trip_length')).toBe('10,20');
-    expect(url.searchParams.has('query')).toBe(false);
+    expect(url.searchParams.has('trip_length')).toBe(false);
+    expect(url.searchParams.get('query')).toContain('Europe');
+    expect(url.searchParams.get('query')).toContain('10 to 20 days');
   });
 
-  it('does not invent multicity matches for fixed different airports with flexible dates', async () => {
+  it('samples real fixed-date multicity searches when the chosen arrival and return airports differ', async () => {
+    vi.mocked(fetch).mockImplementation(async input => {
+      const params = new URL(String(input)).searchParams;
+      const legs = JSON.parse(params.get('multi_city_json')!);
+      return response({ ...fixedData, best_flights: [{ ...fixedData.best_flights[0], flights: [{ departure_airport: { id: 'GRU', time: legs[0].date + ' 18:00' }, arrival_airport: { id: 'CDG' } }] }] });
+    });
     const result = await explore('flight', { ...query, departureAirport: 'AMS', departureDate: undefined, returnDate: undefined });
-    expect(result.offers).toEqual([]);
-    expect(result.coverage).toMatchObject({ complete: false, queries: 0 });
-    expect(fetch).not.toHaveBeenCalled();
+    expect(result.offers).toHaveLength(3);
+    expect(result.coverage).toMatchObject({ complete: false, queries: 3 });
+    for (const call of vi.mocked(fetch).mock.calls) {
+      const params = new URL(String(call[0])).searchParams;
+      expect(params.get('type')).toBe('3');
+      expect(JSON.parse(params.get('multi_city_json')!)[1].departure_id).toBe('AMS');
+    }
+  });
+
+  it('does not turn a missing or changed response collection into a successful empty result', async () => {
+    vi.mocked(fetch).mockResolvedValue(response({ search_metadata: { status: 'Success' } }));
+    await expect(explore('flight', { ...query, arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined })).rejects.toMatchObject({ code: 'PROVIDER_INVALID_RESPONSE' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back from an empty promotion feed to bounded route/date searches from the actual origin', async () => {
+    vi.mocked(fetch).mockImplementation(async input => {
+      const params = new URL(String(input)).searchParams;
+      if (params.get('engine') === 'google_flights_deals') return response({ deals: [], search_parameters: { currency: 'BRL' } });
+      return response({ search_parameters: { currency: 'BRL' }, best_flights: [{ price: 4200, flights: [{ departure_airport: { id: params.get('departure_id'), time: params.get('outbound_date') + ' 18:00' }, arrival_airport: { id: params.get('arrival_id') } }] }] });
+    });
+    const result = await explore('flight', { ...query, origin: 'GYN', adults: 2, arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined });
+    expect(result.offers).toHaveLength(3);
+    expect(result.offers.every(offer => offer.origin === 'GYN' && offer.price === 420000 && !offer.confirmed)).toBe(true);
+    expect(result.search).toMatchObject({ received: 0, matched: 3, sampled: true, combinations: 3 });
+    expect(result.coverage).toMatchObject({ queries: 4, complete: false });
+    expect(fetch).toHaveBeenCalledTimes(4);
+    for (const call of vi.mocked(fetch).mock.calls) expect(new URL(String(call[0])).searchParams.get('adults')).toBe('2');
+  });
+
+  it('reports a failed fallback as a failure rather than implying that no flights exist', async () => {
+    vi.mocked(fetch).mockImplementation(async input => new URL(String(input)).searchParams.get('engine') === 'google_flights_deals' ? response({ deals: [] }) : response({}, 503));
+    await expect(explore('flight', { ...query, arrivalAirport: undefined, departureAirport: undefined, departureDate: undefined, returnDate: undefined })).rejects.toMatchObject({ code: 'PROVIDER_SEARCH_FAILED' });
   });
 
   it('classifies regions from the worldwide catalog instead of treating every non-Brazil airport as Europe', async () => {

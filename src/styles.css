@@ -4684,3 +4684,34 @@ main {
     height: 31px;
   }
 }
+
+/* Search and alert actions stay within the available viewport. */
+.main-shell { width: calc(100% - 244px); }
+.page-heading { flex-wrap: wrap; }
+.page-heading > div { min-width: 0; }
+.explore-layout { display: block; max-width: 1080px; }
+.search-recap { padding-bottom: 26px; display: flex; align-items: center; gap: 20px; justify-content: space-between; flex-wrap: wrap; }
+.search-recap strong { font-size: 17px; color: #315b48; }
+.search-recap p { margin-top: 7px; color: #81907c; font-size: 12px; }
+.search-results-note { font-size: 13px; line-height: 1.8; color: #6d816d; margin: 16px 0; }
+.search-explanation, .offer-conditions { font-size: 12px; color: #7d8b75; line-height: 1.8; margin: 16px 0; }
+.search-explanation summary, .offer-conditions summary, .saved-search-map > summary { cursor: pointer; }
+.search-explanation p, .search-explanation ul { margin-top: 12px; }
+.result-empty .button { margin-top: 20px; }
+.alert-create-entry { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; background: #fff; border: 1px solid #dfe7d8; border-radius: 12px; padding: 23px; margin-bottom: 23px; }
+.alert-create-entry strong { color: #355c47; font-size: 16px; }
+.alert-create-entry p { color: #829078; font-size: 12px; margin-top: 8px; line-height: 1.8; }
+.alert-create-entry .button { min-height: 44px; font-size: 13px; }
+.saved-search-map { margin: 18px 0; font-size: 12px; color: #537758; }
+.saved-search-map .area-map { margin-top: 14px; }
+.saved-search-map .area-map-heading { padding: 15px; }
+.saved-search-map .area-map-heading h4 { font-size: 12px; }
+.saved-search-map .area-map-canvas > svg { min-height: 180px; }
+@media (max-width: 1190px) and (min-width: 761px) { .main-shell { width: calc(100% - 215px); } }
+@media (max-width: 760px) { .main-shell { width: 100%; } }
+@media (max-width: 600px) {
+ .search-recap { gap: 16px; }
+ .search-recap .button, .alert-create-entry .button { width: 100%; }
+ .search-results-note, .search-explanation { font-size: 12px; }
+ .alert-create-entry { padding: 20px; }
+}

@@ -19,6 +19,7 @@ interface AreaMapProps {
   onSelectArea?: (index: number) => void
   areaNumber?: number
   tripPreview?: TripPreview
+  readOnly?: boolean
 }
 
 const WIDTH = 900
@@ -88,7 +89,7 @@ function clampRadius(radius: number) {
   return Math.min(MAX_RADIUS, Math.max(MIN_RADIUS, Math.round(radius / 25) * 25))
 }
 
-export default function AreaMap({ value, onChange, region, focusAirport, otherAreas = [], onSelectArea, areaNumber, tripPreview }: AreaMapProps) {
+export default function AreaMap({ value, onChange, region, focusAirport, otherAreas = [], onSelectArea, areaNumber, tripPreview, readOnly = false }: AreaMapProps) {
   const [camera, setCamera] = useState<Camera>(() => regionCamera(region, focusAirport, value))
   const [dragging, setDragging] = useState(false)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -189,7 +190,7 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
     const point = localPoint(event)
     if (!point) return
     const target = event.target as Element
-    const areaTarget = target.closest('[data-other-area]')
+    const areaTarget = readOnly ? null : target.closest('[data-other-area]')
     gesture.current = {
       mode: target.closest('[data-area-resize]') ? 'resize' : areaTarget ? 'select' : 'pan',
       areaIndex: areaTarget ? Number(areaTarget.getAttribute('data-other-area')) : undefined,
@@ -221,7 +222,7 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
   function onPointerUp(event: ReactPointerEvent<SVGSVGElement>) {
     const current = gesture.current
     const point = localPoint(event)
-    if (current && !current.moved && current.mode === 'pan' && point) selectPoint(point)
+    if (!readOnly && current && !current.moved && current.mode === 'pan' && point) selectPoint(point)
     if (current?.mode === 'select' && current.areaIndex !== undefined) onSelectArea?.(current.areaIndex)
     gesture.current = null
     setDragging(false)
@@ -236,10 +237,10 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
     <section className="area-map" aria-labelledby={labelId}>
       <div className="area-map-heading">
         <div>
-          <h4 id={labelId}>{areaNumber ? `Edite a área ${areaNumber} do roteiro` : 'Escolha uma área no mapa'}</h4>
-          <p id={helpId}>{areaNumber ? 'Clique no mapa para posicionar a área ativa. Ajuste o tamanho pela borda ou pela barra.' : 'Chegada e retorno dentro da área marcada. Clique para criar ou mover a bolha.'}</p>
+          <h4 id={labelId}>{readOnly ? 'Destino desta busca' : areaNumber ? `Edite a área ${areaNumber} do roteiro` : 'Escolha uma área no mapa'}</h4>
+          <p id={helpId}>{readOnly ? value || otherAreas.length ? 'Áreas salvas para esta viagem.' : region || 'Destino selecionado' : areaNumber ? 'Clique no mapa para posicionar a área ativa. Ajuste o tamanho pela borda ou pela barra.' : 'Chegada e retorno dentro da área marcada. Clique para criar ou mover a bolha.'}</p>
         </div>
-        {!areaNumber && <button type="button" className={`area-map-region-button ${!value ? 'is-active' : ''}`} onClick={() => onChange(undefined)}>
+        {!readOnly && !areaNumber && <button type="button" className={`area-map-region-button ${!value ? 'is-active' : ''}`} onClick={() => onChange(undefined)}>
           Usar toda a região
         </button>}
       </div>
@@ -288,7 +289,7 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
               <circle cx={areaCenter[0]} cy={areaCenter[1]} r={2.5} />
               {areaNumber && <text x={areaCenter[0]} y={areaCenter[1] - 15}>{areaNumber}</text>}
             </g>}
-            {areaEdge && areaCenter && <g className="area-map-resize" data-area-resize="true">
+            {!readOnly && areaEdge && areaCenter && <g className="area-map-resize" data-area-resize="true">
               <line x1={areaCenter[0]} y1={areaCenter[1]} x2={areaEdge[0]} y2={areaEdge[1]} />
               <circle cx={areaEdge[0]} cy={areaEdge[1]} r={18} className="area-map-resize-target" />
               <circle cx={areaEdge[0]} cy={areaEdge[1]} r={10} />
@@ -306,7 +307,7 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
         <a className="area-map-attribution" href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noreferrer">Mapa: Natural Earth</a>
       </div>
 
-      {value ? <div className="area-map-details">
+      {!readOnly && (value ? <div className="area-map-details">
         <div className="area-map-slider-heading">
           <label htmlFor={sliderId}>Tamanho da área</label>
           <span>Raio aproximado de {Math.round(value.radiusKm).toLocaleString('pt-BR')} km</span>
@@ -334,7 +335,7 @@ export default function AreaMap({ value, onChange, region, focusAirport, otherAr
         <LocateFixed size={17} />
         <p><strong>{areaNumber ? `Posicione a área ${areaNumber}` : 'Toda a região selecionada'}</strong><span>Para limitar no mapa, clique em um ponto e ajuste o tamanho da bolha. Você também pode marcar a área pelo botão.</span></p>
         <button type="button" className="area-map-create-button" onClick={() => onChange({ lat: camera.lat, lon: camera.lon, radiusKm: 500 })}>Marcar área no centro</button>
-      </div>}
+      </div>)}
     </section>
   )
 }
