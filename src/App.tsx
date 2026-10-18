@@ -8,7 +8,7 @@ import AirlineBrand from "./components/AirlineBrand";
 import { outboundSchedule, sortOffers, uniqueOffers, type OfferSort } from "./shared/offer-results";
 import { needsPassengerRecheck, presentFare, presentFlightFacts } from "./shared/fare-presentation";
 import { runSearchJob } from "./shared/search-client";
-import { flightDraftFromQuery, flightQueryFromDraft } from "./shared/flight-draft";
+import { flightCityDraftFromQuery, flightQueryFromDraft } from "./shared/flight-draft";
 import { flightPeriodLabel, weekdayLabel } from "./shared/flight-dates";
 import TripSummary from "./components/TripSummary";
 import {
@@ -333,7 +333,7 @@ export default function App() {
     setEditingId(monitor.id); setKind(monitor.kind); setMonitorName(monitor.name);
     setDropPercent(String(monitor.rule.dropPercent)); setWindowDays(String(monitor.rule.windowDays));
     setEmail(monitor.channels.email || ""); setTelegram(monitor.channels.telegram);
-    if (monitor.kind === "flight") setFlight(flightDraftFromQuery(monitor.query as FlightQuery));
+    if (monitor.kind === "flight") setFlight(flightCityDraftFromQuery(monitor.query as FlightQuery));
     else { const q = monitor.query as HotelQuery; setHotel({ ...initialHotel, property: q.property, propertyId: q.propertyId || "", adults: String(q.adults), pattern: q.pattern, horizonMonths: String(q.horizonMonths || 12), checkIn: q.checkIn || "", checkOut: q.checkOut || "" }); }
     setTab("monitors"); setCreateMonitor(true); setError(""); setMobileMenu(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });

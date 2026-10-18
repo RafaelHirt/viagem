@@ -8,7 +8,11 @@ OurAirports declara os dados como domínio público, sem garantia de precisão o
 
 Transformações: seleção de `scheduled_service=yes`, exclusão de instalações fechadas, validação de IATA/coordenadas, seleção de campos, nomes de países em português por `Intl.DisplayNames`, ordenação por IATA e serialização em `src/shared/airports.json`. Nomes e cidades vêm do catálogo. Alguns nomes de cidades comuns em português são aliases de busca em `airports.ts`, sem criar aeroportos fictícios. Não usamos IATA como prova de cobertura comercial.
 
-É possível procurar cidade, nome ou código sem acentos. **Goiânia é GYN (Santa Genoveva, Brasil); GOI é Goa Dabolim, na Índia.** As sugestões exibem cidade, aeroporto, país e código para evitar essa confusão.
+É possível procurar cidade, nome ou código sem acentos. **Goiânia é GYN (Santa Genoveva, Brasil); GOI é Goa Dabolim, na Índia.** O formulário apresenta uma opção por cidade, com país e região quando necessário para distinguir homônimos. Os códigos ficam nos critérios técnicos e nos detalhes dos voos retornados.
+
+O agrupamento por cidade agora abrange o catálogo inteiro: nome de município normalizado, país e estado/região identificam os grupos gerais. Vínculos explícitos de cidades atendidas unem municípios diferentes, como Narita/Tóquio, Newark/Nova York e os aeroportos de Paris. Não usamos um raio genérico para incorporar cidades vizinhas. Os vínculos são uma referência do produto, não um inventário exaustivo de todos os aeroportos que comercialmente atendem a uma área metropolitana.
+
+Uma busca por Miami, por exemplo, oferece uma cidade e guarda MIA/OPF; Orlando guarda MCO/SFB. Quando existem múltiplos aeroportos, todos os códigos associados são enviados juntos ao fornecedor, sem multiplicar uma chamada por aeroporto. A presença de um código no catálogo não comprova serviço comercial ou preço retornado pela fonte.
 
 Regiões usam o continente e o país da fonte. América Central e Caribe têm lista explícita de países/territórios e são separados da América do Norte. São classificações geográficas do catálogo, não avaliação sobre condições de viagem.
 

@@ -32,7 +32,7 @@ Consulte [Publicação e configuração](docs/DEPLOY.md) para as variáveis de f
 
 - Buscar passagens em um único fluxo, definir o alerta durante o preenchimento ou criá-lo depois do resultado, sem repetir a viagem. Os hotéis permanecem indisponíveis enquanto o conector não estiver pronto.
 - Buscar cidade, país ou região na pergunta **Para onde você quer viajar?**, sem destino predefinido nem mapa obrigatório. Cartões visíveis incluem Estados Unidos/Caribe e um diretório reúne todos os países do catálogo. Regiões brasileiras como Nordeste usam estados reais; limitar uma região no mapa é opcional.
-- Comparar aeroportos alternativos da mesma cidade na mesma consulta (como Galeão/Santos Dumont, Charles de Gaulle/Orly, Denver DEN/BJC e Orlando MCO/SFB, com indicação do principal).
+- Escolher a cidade uma única vez, na origem, destino, chegada, volta e roteiro. Seus aeroportos são associados automaticamente à consulta, sem exigir escolher códigos ou marcar alternativas. O agrupamento usa todo o catálogo, além de vínculos entre municípios que atendem à mesma cidade.
 - Ajustar percentual e período da referência nos campos visíveis do alerta; na revisão, **Alterar queda e período** volta diretamente a eles.
 - Ordenar resultados, distinguir horários/escalas, remover duplicações comprovadas e mostrar logos fornecidos pela fonte.
 - Enviar confirmação de cadastro por e-mail quando o transporte estiver configurado, com controle de duplicidade.

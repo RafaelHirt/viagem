@@ -1,5 +1,7 @@
 import type { FlightQuery, GeoArea, TripPlan } from './types'
-import { findRegion } from './airports'
+import { findAirport, findRegion, isAirportInArea } from './airports'
+import { cityAirportCodes } from './airport-options'
+import { tripCityName } from './trip-cities'
 import { tripDays } from './flight-dates'
 export interface FlightDraft {
   originAirports?: string[]; arrivalAirports?: string[]; departureAirports?: string[]
@@ -36,4 +38,19 @@ export function flightQueryFromDraft(draft: FlightDraft): FlightQuery {
     ...(draft.dateMode === 'months' ? { startMonth: draft.startMonth, endMonth: draft.endMonth } : {}),
     ...(draft.dateMode !== 'exact' && draft.weekdayMode !== 'any' ? { departureWeekdays: weekend ? [5] : draft.departureWeekdays, returnWeekdays: weekend ? [0] : draft.returnWeekdays } : {}),
   }
+}
+
+/** Editing adopts city selection only when the user saves; stored queries and
+ * their histories remain untouched until then. Map limits still apply. */
+export function flightCityDraftFromQuery(query:FlightQuery):FlightDraft {
+  const draft=flightDraftFromQuery(query)
+  const codes=(primary:string,destination=false)=>cityAirportCodes(primary).filter(code=>{
+    const airport=findAirport(code)!
+    return !destination||(!query.area||isAirportInArea(airport,query.area))&&(!query.tripPlan||query.tripPlan.areas.some(area=>isAirportInArea(airport,area)))
+  })
+  const origin=codes(draft.origin),arrival=codes(draft.arrivalAirport,true),departure=codes(draft.departureAirport,true)
+  return {...draft,origin:origin[0]||draft.origin,originAirports:origin.length>1?origin:undefined,
+    arrivalAirport:arrival[0]||draft.arrivalAirport,arrivalAirports:arrival.length>1?arrival:undefined,
+    departureAirport:departure[0]||draft.departureAirport,departureAirports:departure.length>1?departure:undefined,
+    ...(draft.destinationMode==='airport'?{destination:tripCityName(draft.arrivalAirport)}:{})}
 }

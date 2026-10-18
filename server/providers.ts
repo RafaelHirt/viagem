@@ -364,7 +364,7 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
   let combinations = 0;
   if (!offers.length) {
     const seeds = eligible.filter((candidate, index, all) => index === all.findIndex(other => other.arrivalAirport === candidate.arrivalAirport && other.outboundDate === candidate.outboundDate && other.returnDate === candidate.returnDate)).slice(0, 3);
-    const samples = query.adults > 1 && seeds.length ? seeds.map(candidate => ({ ...query, origin: candidate.origin!, originAirports: undefined, arrivalAirport: candidate.arrivalAirport, arrivalAirports: undefined, departureAirport: candidate.departureAirport, departureAirports: undefined, departureDate: candidate.outboundDate, returnDate: candidate.returnDate })) : sampleQueries(query, start, end);
+    const samples = query.adults > 1 && seeds.length ? seeds.map(candidate => ({ ...query, origin: query.origin, originAirports: query.originAirports, arrivalAirport: query.arrivalAirport || candidate.arrivalAirport, arrivalAirports: query.arrivalAirports, departureAirport: query.departureAirport || (query.arrivalAirports?.length ? undefined : candidate.departureAirport), departureAirports: query.departureAirports, departureDate: candidate.outboundDate, returnDate: candidate.returnDate })) : sampleQueries(query, start, end);
     combinations = samples.length;
     const attempts = await Promise.allSettled(samples.map(sample => exploreFlight(sample, budget, true)));
     queries += samples.length;
@@ -433,7 +433,8 @@ function sampleQueries(query: FlightQuery, start: Date, end: Date): FlightQuery[
       if (preview.status !== 'ready') return [];
       departureAirport = preview.stops.at(-1)!.airportCode;
     }
-    const candidate = { ...query, arrivalAirport, departureAirport };
+    const departureAirports=query.departureAirports || (!query.departureAirport && !query.tripPlan ? query.arrivalAirports:undefined);
+    const candidate = { ...query, arrivalAirport, departureAirport, ...(departureAirports?{departureAirports}:{}) };
     try { enforceArea(candidate, arrivalAirport, departureAirport); enforceDistance(candidate); } catch { return []; }
     return [{ ...candidate, ...dates }];
   });

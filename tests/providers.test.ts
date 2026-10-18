@@ -116,6 +116,30 @@ describe('real price provider adapter', () => {
     expect(params.get('departure_id')).toBe('GIG,SDU');expect(params.get('arrival_id')).toBe('CDG,ORY');expect(fetch).toHaveBeenCalledOnce();
   });
 
+  it('quotes Miami as a city with all its airports and retains only matching city results', async()=>{
+    vi.mocked(fetch).mockResolvedValue(response({...fixedData,best_flights:[
+      {price:2100,flights:[{departure_airport:{id:'SDU',time:'2027-03-10 13:00'},arrival_airport:{id:'OPF'}}]},
+      {price:1800,flights:[{departure_airport:{id:'GIG',time:'2027-03-10 13:00'},arrival_airport:{id:'MCO'}}]},
+    ]}));
+    const result=await explore('flight',{...query,destination:'Miami',origin:'GIG',originAirports:['GIG','SDU'],arrivalAirport:'MIA',arrivalAirports:['MIA','OPF'],departureAirport:undefined});
+    const params=new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams;
+    expect(params.get('type')).toBe('1');expect(params.get('arrival_id')).toBe('MIA,OPF');
+    expect(fetch).toHaveBeenCalledOnce();expect(result.offers).toHaveLength(1);
+    expect(result.offers[0]).toMatchObject({arrivalAirport:'OPF',searchedReturnAirports:['MIA','OPF']});
+  });
+
+  it.each([false,true])('keeps every city airport for flexible repricing, discovery candidates=%s',async seeded=>{
+    vi.mocked(fetch).mockImplementation(async input=>{
+      const params=new URL(String(input)).searchParams;
+      if(params.get('engine')==='google_flights_deals')return response({deals:seeded?[{price:1000,departure_airport_code:'SDU',arrival_airport_code:'MIA',name:'Miami',start_date:'2027-03-10',end_date:'2027-03-21'}]:[]});
+      expect(params.get('departure_id')).toBe('GIG,SDU');expect(params.get('arrival_id')).toBe('MIA,OPF');expect(params.get('type')).toBe('1');
+      return response({search_parameters:{adults:2,currency:'BRL'},best_flights:[{price:2200,flights:[{departure_airport:{id:'SDU',time:params.get('outbound_date')+' 13:00'},arrival_airport:{id:'OPF'}}]}]});
+    });
+    const result=await explore('flight',{...query,destination:'Miami',origin:'GIG',originAirports:['GIG','SDU'],arrivalAirport:'MIA',arrivalAirports:['MIA','OPF'],departureAirport:undefined,departureDate:undefined,returnDate:undefined,adults:2,startMonth:'2027-03',endMonth:'2027-03'});
+    expect(result.offers.length).toBeGreaterThan(0);expect(result.offers.every(offer=>offer.arrivalAirport==='OPF'&&offer.passengers===2)).toBe(true);
+    expect(vi.mocked(fetch).mock.calls.length).toBeLessThanOrEqual(4);
+  });
+
   it.each([undefined, 1, 3])('rejects a two-adult quote when the source passenger count is %s', async adults => {
     vi.mocked(fetch).mockResolvedValue(response({ ...fixedData, search_parameters: { currency: 'BRL', adults } }));
     await expect(explore('flight', { ...query, adults: 2 })).rejects.toMatchObject({ code: 'PROVIDER_PASSENGER_MISMATCH' });

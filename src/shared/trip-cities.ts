@@ -1,5 +1,5 @@
-import { airportOptions } from './airport-options'
-import { findAirport, searchAirports } from './airports'
+import { airportOptions, searchCityAirports } from './airport-options'
+import { findAirport } from './airports'
 import type { TripPlan } from './types'
 
 /** Airport codes identify cities here, not a required flight arrival. */
@@ -28,5 +28,7 @@ export function searchTripCities(text: string) {
   const query = normalize(text)
   if (!query) return []
   const named = Object.keys(CITY_NAMES).filter(code => normalize(CITY_NAMES[code]).includes(query)).flatMap(code => findAirport(code) || [])
-  return [...new Map([...named, ...searchAirports(text,32)].map(airport => [tripCityCode(airport.code), findAirport(tripCityCode(airport.code))!])).values()].slice(0,8)
+  const cities=[...new Map([...named, ...searchCityAirports(text,32)].map(airport => [tripCityCode(airport.code), findAirport(tripCityCode(airport.code))!])).values()]
+  const exact=cities.filter(airport=>normalize(tripCityName(airport.code))===query||normalize(airport.city.split(' (')[0])===query)
+  return (exact.length?exact:cities).slice(0,8)
 }
