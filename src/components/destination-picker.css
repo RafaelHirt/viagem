@@ -1,5 +1,6 @@
 .destination-picker { margin:28px 0 20px; min-width:0; }
 .destination-picker > label { color:#244c3d; font-size:16px; font-weight:600; }
+.destination-picker-lead { color:#53665d; font-size:14px; line-height:1.7; margin:0 0 4px; }
 .destination-picker-input { position:relative; display:flex; align-items:center; }
 .destination-picker-input > svg { position:absolute; left:15px; color:#176b56; pointer-events:none; }
 .destination-picker-input > input { width:100%; padding-left:45px!important; padding-right:45px!important; min-height:54px!important; font-size:16px!important; }
@@ -9,11 +10,27 @@
 .destination-picker-options > li[role=option] { display:flex; gap:13px; align-items:center; padding:13px 12px; cursor:pointer; border-radius:7px; color:#176b56; }
 .destination-picker-options li:hover,.destination-picker-options li.active { background:#edf5e9; }
 .destination-picker-options li > svg { flex-shrink:0; }
+.destination-picker-options li > div { flex:1; min-width:0; }
 .destination-picker-options strong { display:block; font-size:14px; color:#244c3d; line-height:1.5; }
 .destination-picker-options small { display:block; font-size:13px; color:#53665d; line-height:1.5; margin-top:3px; }
 .destination-picker-empty { font-size:14px; padding:16px; color:#53665d; }
-.destination-suggestions { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
-.destination-suggestions button { min-height:42px; padding:9px 15px; border:1px solid #c3d3bc; border-radius:22px; color:#315d48; background:#f5f8f0; font-size:14px; }
+.destination-browser { margin-top:16px; }
+.destination-browser-heading { display:flex; gap:12px; flex-wrap:wrap; justify-content:space-between; margin:0 0 13px; color:#315d48; font-size:14px; }
+.destination-browser-heading > span { color:#53665d; font-size:13px; }
+.destination-cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.destination-cards > button { position:relative; display:grid; justify-items:start; align-content:start; gap:8px; text-align:left; min-height:132px; padding:17px; border:1px solid #cfddc8; border-radius:11px; color:#176b56; background:#fbfcf8; }
+.destination-cards > button > strong { font-size:15px; line-height:1.5; color:#254d3c; }
+.destination-cards > button > span { font-size:13px; line-height:1.6; color:#53665d; }
+.destination-cards > button > svg:last-child { position:absolute; right:15px; top:19px; }
+.destination-cards > button:hover { border-color:#52876b; background:#eef6e9; }
+.destination-cards > button[aria-pressed=true] { border-color:#176b56; background:#edf5e7; box-shadow:inset 0 0 0 1px #176b56; }
+.destination-directory { margin-top:18px; font-size:14px; color:#315d48; }
+.destination-directory > summary { cursor:pointer; padding:10px 0; }
+.destination-directory fieldset { border:0; padding:16px 0; margin:0; min-width:0; }
+.destination-directory legend { font-size:14px; font-weight:600; margin-top:16px; color:#315d48; }
+.destination-directory fieldset > div { display:flex; flex-wrap:wrap; gap:8px; max-height:230px; overflow:auto; padding:5px 0; }
+.destination-directory button { border:1px solid #d4e0cc; border-radius:7px; min-height:42px; padding:9px 13px; text-align:left; font-size:14px; color:#315d48; background:white; }
+.destination-change { align-self:flex-start; margin-top:5px; }
 .destination-region-note { border:1px solid #c2d5bc; background:#f2f7ee; border-radius:10px; padding:18px 20px; color:#28503e; font-size:14px; line-height:1.7; margin:18px 0; }
 .destination-region-note strong { display:block; font-size:16px; margin-bottom:4px; }
 .destination-map-optional { margin:20px 0; color:#53665d; font-size:14px; line-height:1.7; }
@@ -27,6 +44,9 @@
 .destination-trip-active { margin:24px 0; }
 .destination-trip-active p { font-size:14px; line-height:1.7; color:#53665d; margin-top:8px; }
 @media(max-width:600px) {
+ .destination-cards { grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+ .destination-cards > button { padding:14px; min-height:145px; }
+ .destination-cards > button > strong { font-size:14px; }
  .destination-picker-input > input { font-size:16px!important; }
  .destination-trip-entry { flex-direction:column; align-items:stretch; gap:14px; }
  .destination-trip-entry .button { width:100%; }

@@ -1,5 +1,5 @@
 import type { FlightQuery, GeoArea, TripPlan } from './types'
-import { REGIONS } from './airports'
+import { findRegion } from './airports'
 import { tripDays } from './flight-dates'
 export interface FlightDraft {
   originAirports?: string[]; arrivalAirports?: string[]; departureAirports?: string[]
@@ -12,7 +12,7 @@ export interface FlightDraft {
 export const initialFlight: FlightDraft = { origin: '', destination: '', destinationMode: 'region', arrivalAirport: '', departureAirport: '', departureDate: '', returnDate: '', minDays: '10', maxDays: '20', horizonMonths: '12', maxAirportDistanceKm: '', dateMode: 'horizon', startMonth: '', endMonth: '', weekdayMode: 'any', departureWeekdays: [], returnWeekdays: [], adults: '1', allowOpenJaw: true }
 export function flightDraftFromQuery(query: FlightQuery): FlightDraft {
   const fridaySunday = query.minDays === 2 && query.maxDays === 2 && query.departureWeekdays?.length === 1 && query.departureWeekdays[0] === 5 && query.returnWeekdays?.length === 1 && query.returnWeekdays[0] === 0
-  const region = REGIONS.some(region => region.label === query.destination || region.id === query.destination)
+  const region = Boolean(findRegion(query.destination))
   return { ...initialFlight, ...query, ...(query.tripPlan?.startAirport ? { tripPlan: { ...query.tripPlan, requiredAirport: query.tripPlan.requiredAirport || query.tripPlan.startAirport, startAirport: undefined } } : {}), minDays: String(query.minDays), maxDays: String(query.maxDays), horizonMonths: String(query.horizonMonths), adults: String(query.adults),
     arrivalAirport: query.arrivalAirport || query.tripPlan?.startAirport || '', departureAirport: query.departureAirport || '',
     departureDate: query.departureDate || '', returnDate: query.returnDate || '', maxAirportDistanceKm: query.maxAirportDistanceKm ? String(query.maxAirportDistanceKm) : '',

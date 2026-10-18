@@ -45,3 +45,19 @@ O leitor rejeita metadados inválidos, IDs duplicados, URLs de outra fonte e arq
 5. Validar os hotéis desejados e implementar preços separadamente, preservando hóspedes, noites, categoria, alimentação, cancelamento, moeda e taxas equivalentes. Existir no catálogo não significa ter disponibilidade ou tarifa nas datas consultadas.
 
 Não usar um arquivo local não verificado, nomes conhecidos ou resultados do Google como comprovação de pertencimento à base Booking. A API de preços e o envio automático de alertas continuam sendo etapas distintas da seleção do hotel.
+
+## Alternativa para um piloto: Google Hotels pela SerpApi
+
+A [documentação de Google Hotels da SerpApi](https://serpapi.com/google-hotels-api), consultada em 17/10/2026, oferece busca por cidade/hotel, datas de entrada e saída, adultos e moeda, além de propriedades e ofertas de vendedores. Pode haver ofertas da Booking entre os vendedores retornados. Isso é uma fonte Google Hotels via SerpApi; não é acesso direto à Booking nem prova de parceria afiliada.
+
+Para iniciar um piloto pessoal sem o acesso de parceiro Booking, essa é a alternativa técnica recomendada. Pode usar a conta/chave SerpApi já utilizada nas passagens, com consumo adicional da cota e condições do plano a verificar. Nenhuma nova contratação, cobrança ou integração foi ativada nesta etapa. Booking continua sendo a escolha registrada; não houve troca silenciosa de fornecedor.
+
+O trabalho seguinte deve ser concreto e separado do conector Booking:
+
+1. Criar um adaptador identificado como Google Hotels/SerpApi e permitir buscar uma cidade ou escolher um hotel, sem exigir que o usuário conheça IDs de propriedades.
+2. Consultar `engine=google_hotels` com `check_in_date`, `check_out_date`, `adults` e `currency=BRL`. Guardar o identificador próprio da fonte (`property_token`) separadamente de um ID Booking.
+3. Validar preço total da estadia e composição de impostos/taxas. `rate_per_night` não pode ser apresentado como total; não converter uma tarifa base em total com taxas sem evidência da resposta.
+4. Comparar a mesma hospedagem, ocupação, noites e condições de alimentação/cancelamento. Uma oferta de outro vendedor não é automaticamente equivalente.
+5. Exibir vendedor e link real de reserva, testar uma consulta autenticada com hotel conhecido e só depois habilitar histórico e alertas comparáveis.
+
+O formulário atual de hotéis continua em **Em breve**. A referência acima foi lida sem autenticação; não foi verificada disponibilidade, preço de hotel ou oferta Booking ao vivo. O teste de um preço real exige a chave configurada no ambiente seguro, sem copiá-la para o navegador ou para o chat.

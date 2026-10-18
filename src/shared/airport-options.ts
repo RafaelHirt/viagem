@@ -6,6 +6,8 @@ const METROS = [
   { name: 'São Paulo e Campinas', codes: ['GRU', 'CGH', 'VCP'] }, { name: 'Milão', codes: ['MXP', 'LIN', 'BGY'] },
   { name: 'Londres', codes: ['LHR', 'LGW', 'LCY', 'STN', 'LTN', 'SEN'] }, { name: 'Roma', codes: ['FCO', 'CIA'] },
   { name: 'Nova York', codes: ['JFK', 'LGA', 'EWR'] }, { name: 'Tóquio', codes: ['NRT', 'HND'] },
+  { name: 'Denver', codes: ['DEN', 'BJC'] },
+  { name: 'Orlando', codes: ['MCO', 'SFB'] },
 ]
 export function airportOptions(code: string) { return METROS.find(metro => metro.codes.includes(code)) }
 export function airportSet(primary?: string, alternatives?: string[]): string[] { return [...new Set(alternatives?.length ? alternatives : primary ? [primary] : [])] }

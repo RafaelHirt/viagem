@@ -481,3 +481,56 @@ describe('exact dates with a mandatory city and free entry',()=>{
     expect(result.coverage.complete).toBe(false);expect(result.coverage.description).toContain('trens e hotéis não estão cotados')
   })
 })
+
+describe('country and Caribbean searches and Denver alternatives',()=>{
+ beforeEach(()=>{vi.stubEnv('SERPAPI_API_KEY','private-test-only');vi.stubGlobal('fetch',vi.fn());vi.useFakeTimers();vi.setSystemTime(new Date('2026-10-17T13:00:00Z'))})
+ afterEach(()=>{vi.unstubAllEnvs();vi.unstubAllGlobals();vi.useRealTimers()})
+ it('preserves exact dates while sampling airports inside a country instead of requiring the user to choose a city',async()=>{
+  vi.mocked(fetch).mockImplementation(async input=>{
+   const params=new URL(String(input)).searchParams
+   expect(params.get('engine')).toBe('google_flights');expect(params.get('outbound_date')).toBe('2027-03-10');expect(params.get('return_date')).toBe('2027-03-21')
+   const destination=params.get('arrival_id')!;expect(['JFK','MIA','LAX']).toContain(destination)
+   return response({search_parameters:{adults:2,currency:'BRL'},best_flights:[{price:5000,flights:[{departure_airport:{id:'GRU',time:'2027-03-10 09:00'},arrival_airport:{id:destination}}]}]})
+  })
+  const result=await explore('flight',{...query,destination:'Estados Unidos',adults:2,arrivalAirport:undefined,departureAirport:undefined})
+  expect(fetch).toHaveBeenCalledTimes(3);expect(result.offers).toHaveLength(3);expect(result.coverage).toMatchObject({complete:false,queries:3})
+  expect(result.offers.every(offer=>offer.outboundDate==='2027-03-10'&&offer.returnDate==='2027-03-21')).toBe(true)
+ })
+ it('queries the country rather than its first airport and removes deals from other countries',async()=>{
+  const deal={price:1500,departure_airport_code:'GRU',start_date:'2026-11-10',end_date:'2026-11-21'}
+  vi.mocked(fetch).mockResolvedValue(response({deals:['DEN','MIA','YYZ','MEX','PUJ'].map(arrival_airport_code=>({...deal,arrival_airport_code}))}))
+  const result=await explore('flight',{...query,destination:'Estados Unidos',arrivalAirport:undefined,departureAirport:undefined,departureDate:undefined,returnDate:undefined})
+  expect(result.offers.map(offer=>offer.arrivalAirport)).toEqual(['DEN','MIA'])
+  expect(new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams.get('query')).toContain('United States')
+  expect(result.coverage.complete).toBe(false)
+ })
+ it('includes Cancun and Caribbean islands while excluding Mexico City and the United States',async()=>{
+  const deal={price:1500,departure_airport_code:'GRU',start_date:'2026-11-10',end_date:'2026-11-21'}
+  vi.mocked(fetch).mockResolvedValue(response({deals:['CUN','PUJ','NAS','SJU','MEX','JFK'].map(arrival_airport_code=>({...deal,arrival_airport_code}))}))
+  const result=await explore('flight',{...query,destination:'Caribe',arrivalAirport:undefined,departureAirport:undefined,departureDate:undefined,returnDate:undefined})
+  expect(result.offers.map(offer=>offer.arrivalAirport)).toEqual(['CUN','PUJ','NAS','SJU'])
+  expect(new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams.get('query')).toContain('Caribbean')
+ })
+ it('does not mistake EUA for an airport and keeps fallback requests inside the United States',async()=>{
+  vi.mocked(fetch).mockImplementation(async input=>{
+   const params=new URL(String(input)).searchParams
+   if(params.get('engine')==='google_flights_deals')return response({deals:[]})
+   const destination=params.get('arrival_id')!
+   expect(['JFK','MIA','LAX','MCO','DEN','SFO']).toContain(destination)
+   return response({search_parameters:{adults:2,currency:'BRL'},best_flights:[{price:5000,flights:[{departure_airport:{id:'GRU',time:params.get('outbound_date')+' 09:00'},arrival_airport:{id:destination}}]}]})
+  })
+  const result=await explore('flight',{...query,adults:2,destination:'EUA',arrivalAirport:undefined,departureAirport:undefined,departureDate:undefined,returnDate:undefined})
+  expect(result.offers.length).toBeGreaterThan(0);expect(fetch).toHaveBeenCalledTimes(4)
+  expect(new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams.get('engine')).toBe('google_flights_deals')
+ })
+ it('sends DEN and BJC to the source together with the requested passengers and rejects an airport outside the country before calling',async()=>{
+  vi.mocked(fetch).mockResolvedValue(response({search_parameters:{adults:2,currency:'BRL'},best_flights:[{price:5000,flights:[{departure_airport:{id:'GRU',time:'2027-03-10 09:00'},arrival_airport:{id:'DEN'}}]}]}))
+  const result=await explore('flight',{...query,destination:'Denver',adults:2,arrivalAirport:'DEN',arrivalAirports:['DEN','BJC'],departureAirport:undefined})
+  expect(result.offers[0]).toMatchObject({arrivalAirport:'DEN',passengers:2})
+  const params=new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams
+  expect(params.get('arrival_id')).toBe('DEN,BJC');expect(params.get('adults')).toBe('2')
+  vi.mocked(fetch).mockClear()
+  await expect(explore('flight',{...query,destination:'Estados Unidos',arrivalAirport:'DEN',arrivalAirports:['DEN','YYZ'],departureAirport:undefined})).rejects.toMatchObject({code:'AIRPORT_OUTSIDE_REGION'})
+  expect(fetch).not.toHaveBeenCalled()
+ })
+})

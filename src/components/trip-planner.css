@@ -1,4 +1,15 @@
 .trip-planner { min-width: 0; }
+.trip-search-summary { padding:22px; border:1px solid #b7cfaf; border-radius:11px; background:#f6f9f1; color:#315d48; }
+.trip-search-summary-heading { display:flex; align-items:flex-start; gap:12px; }
+.trip-search-summary-heading > svg { flex-shrink:0; }
+.trip-search-summary h4 { font-size:17px; margin:0 0 9px; }
+.trip-search-summary p { font-size:14px; line-height:1.8; color:#53665d; margin:8px 0 14px; }
+.trip-search-summary > small { display:block; font-size:13px; color:#53665d; line-height:1.7; margin-top:15px; }
+.trip-example-list { display:grid; gap:10px; margin-top:16px; }
+.trip-example-list > details { background:white; border:1px solid #d4e1cc; border-radius:9px; padding:13px 15px; min-width:0; }
+.trip-example-list > details > summary { cursor:pointer; font-size:14px; line-height:1.8; }
+.trip-example-list > details > summary > span { font-weight:600; display:block; }
+.trip-example-list .trip-summary { margin-top:15px; }
 .trip-required-cities { display:flex; flex-wrap:wrap; gap:10px; margin:18px 0; }
 .trip-required-cities > span { display:inline-flex; align-items:center; gap:12px; background:#edf5e9; color:#244d38; border:1px solid #a4c3ad; border-radius:24px; padding:4px 6px 4px 16px; }
 .trip-required-cities strong { font-size:14px; }

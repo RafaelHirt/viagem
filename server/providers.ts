@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ExploreResult, FlightQuery, FlightSegment, HotelQuery, Offer, Status } from '../src/shared/types';
 import { findAirport, haversineKm } from '../src/shared/domain';
-import { AIRPORTS, isAirportInArea, matchesRegion, REGIONS, searchAirports } from '../src/shared/airports.ts';
+import { AIRPORTS, findRegion, isAirportInArea, matchesRegion, searchAirports } from '../src/shared/airports.ts';
 import { airportInTrip, countriesInAreas, previewTrip } from '../src/shared/trip-planner.ts';
 import { flightWindow, matchesTravelDates, sampleTravelDates } from '../src/shared/flight-dates.ts';
 import { linkedAdults } from './flight-passengers.ts';
@@ -84,8 +84,7 @@ async function requestSerpApi(parameters: Record<string, string>, budget: Search
 function textKey(value: string): string { return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase(); }
 
 function destinationRegion(destination: string) {
-  const key = textKey(destination);
-  return REGIONS.find(region => region.id === key || textKey(region.label) === key);
+  return findRegion(destination);
 }
 
 function enforceRegion(query: FlightQuery): void {
@@ -191,7 +190,7 @@ function conditionsWarnings(query: FlightQuery): string[] {
 }
 
 function exactEntry(query: FlightQuery): string | undefined {
-  const value = query.arrivalAirport || query.tripPlan?.startAirport || (/^[A-Z]{3}$/i.test(query.destination.trim()) ? query.destination.trim().toUpperCase() : '');
+  const value = query.arrivalAirport || query.tripPlan?.startAirport || (!destinationRegion(query.destination) ? findAirport(query.destination.trim())?.code : '');
   return value || undefined;
 }
 
@@ -280,7 +279,15 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
       }
       return { offers: uniqueOffers(successful).sort((a,b)=>a.price-b.price), coverage: { complete:false,queries:attempts.length,description:'Datas exatas mantidas; aeroportos amostrados em roteiros que incluem todas as cidades obrigatórias. Comparação apenas das passagens aéreas consultadas; trens e hotéis não estão cotados.' }, warnings };
     }
-    if (!entry) throw new ProviderError('EXACT_AIRPORT_REQUIRED', 'Para consultar datas exatas, informe o aeroporto de chegada. Deixe as datas livres para explorar uma região.', 400);
+    if (!entry && (destinationRegion(query.destination) || query.area)) {
+      const airports=sampleAirports(query).slice(0,3);
+      const attempts=await Promise.allSettled(airports.map(arrivalAirport=>exploreFlight({...query,arrivalAirport,departureAirport:query.departureAirport||arrivalAirport},budget,true)));
+      const offers=attempts.flatMap(attempt=>attempt.status==='fulfilled'?attempt.value.offers:[]);
+      if(attempts.length && attempts.every(attempt=>attempt.status==='rejected')) {const first=attempts[0];if(first.status==='rejected')throw first.reason;}
+      if(attempts.some(attempt=>attempt.status==='rejected'))warnings.push('Alguns aeroportos da amostra não puderam ser consultados.');
+      return {offers:uniqueOffers(offers).sort((a,b)=>a.price-b.price),coverage:{complete:false,queries:attempts.length,description:'Datas exatas preservadas; até três aeroportos da região consultados como amostra. Outros aeroportos e tarifas podem existir.'},warnings};
+    }
+    if (!entry) throw new ProviderError('EXACT_AIRPORT_REQUIRED', 'Escolha uma cidade, país, região ou área para consultar estas datas.', 400);
     const exit = query.departureAirport || entry;
     const originIds = queryAirports(query, 'origin').join(',');
     const entryIds = (queryAirports(query, 'arrival').length ? queryAirports(query, 'arrival') : [entry]).join(',');
@@ -386,11 +393,11 @@ async function exploreFlight(query: FlightQuery, budget: SearchBudget = { deadli
         : array(data.deals).length ? 'Os preços recebidos não corresponderam às suas preferências. Isso não significa que não existam passagens.' : 'A seleção de promoções e as combinações consultadas não trouxeram preços. Isso não significa que não existam passagens para esse destino.' } };
 }
 
-const REGION_SEARCH: Record<(typeof REGIONS)[number]['id'], string> = {
+const REGION_SEARCH: Record<string, string> = {
   'europe': 'Europe', 'brazil': 'Brazil',
   'brazil-northeast': 'Northeast Brazil', 'brazil-north': 'North Brazil',
   'brazil-southeast': 'Southeast Brazil', 'brazil-south': 'South Brazil', 'brazil-central-west': 'Central-West Brazil',
-  'south-america': 'South America', 'north-america': 'North America', 'central-america': 'Central America and the Caribbean',
+  'south-america': 'South America', 'north-america': 'North America', 'central-america': 'Central America and the Caribbean', 'caribbean':'Caribbean islands, Cancun, Cozumel and Tulum',
   'asia': 'Asia', 'africa': 'Africa', 'oceania': 'Oceania', 'anywhere': 'anywhere',
 };
 function discoveryText(query: FlightQuery): string {
@@ -398,20 +405,24 @@ function discoveryText(query: FlightQuery): string {
   const region = destinationRegion(query.destination);
   const countries = query.tripPlan ? (query.tripPlan.countryCodes.length ? query.tripPlan.countryCodes.map(code => ({ code })) : countriesInAreas(query.tripPlan.areas)) : query.area ? countriesInAreas([query.area]) : [];
   const countryNames = new Intl.DisplayNames(['en'], { type: 'region' });
-  const target = airport ? `${airport.city}, ${airport.country}` : region ? REGION_SEARCH[region.id] : countries.length ? countries.slice(0, 8).map(item => countryNames.of(item.code)).join(' or ') : query.destination;
+  const target = airport ? `${airport.city}, ${airport.country}` : region ? (region.countryCode ? countryNames.of(region.countryCode)! : REGION_SEARCH[region.id] || region.label) : countries.length ? countries.slice(0, 8).map(item => countryNames.of(item.code)).join(' or ') : query.destination;
   const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const weekdays = query.departureWeekdays?.length || query.returnWeekdays?.length ? ` Depart on ${query.departureWeekdays?.map(day => names[day]).join(' or ') || 'any day'}; return on ${query.returnWeekdays?.map(day => names[day]).join(' or ') || 'any day'}.` : '';
   return `Flights to ${target}. Trips lasting ${query.minDays} to ${query.maxDays} days.${weekdays}`;
 }
 
 /** A bounded fallback, never an exhaustive calendar or a claim of cheapest fare. */
-function sampleQueries(query: FlightQuery, start: Date, end: Date): FlightQuery[] {
-  const hubs = ['LIS', 'CDG', 'MAD', 'FCO', 'AMS', 'LHR', 'FRA', 'GRU', 'GIG', 'BSB', 'REC', 'FOR', 'SSA', 'NAT', 'MAO', 'BEL', 'CNF', 'VIX', 'CWB', 'POA', 'FLN', 'GYN', 'CGB', 'CGR', 'EZE', 'SCL', 'JFK', 'MIA', 'MEX', 'PTY', 'NRT', 'SIN', 'DXB', 'CAI', 'JNB', 'SYD'];
+function sampleAirports(query:FlightQuery):string[] {
+  const hubs = ['LIS', 'CDG', 'MAD', 'FCO', 'AMS', 'LHR', 'FRA', 'GRU', 'GIG', 'BSB', 'REC', 'FOR', 'SSA', 'NAT', 'MAO', 'BEL', 'CNF', 'VIX', 'CWB', 'POA', 'FLN', 'GYN', 'CGB', 'CGR', 'EZE', 'SCL', 'JFK', 'MIA', 'LAX', 'MCO', 'DEN', 'SFO', 'YYZ', 'YVR', 'MEX', 'CUN', 'PUJ', 'AUA', 'CUR', 'NAS', 'SJU', 'MBJ', 'PTY', 'NRT', 'SIN', 'DXB', 'CAI', 'JNB', 'SYD'];
   const explicit = exactEntry(query);
   const accepted = (code: string) => code !== query.origin && matchesDestination({ arrival_airport_code: code }, { ...query, departureAirport: undefined });
   const railOptions = query.tripPlan && requiredCityCodes(query.tripPlan).length && query.tripPlan.transport === 'train' ? railTripOptions(query.tripPlan) : [];
   let airports = explicit ? [explicit] : railOptions.length ? [...new Set(railOptions.flatMap(option => [option.stops.at(-1)!.airportCode, option.stops[0].airportCode]))] : hubs.filter(accepted);
   if (!airports.length) airports = AIRPORTS.filter(airport => accepted(airport.code)).sort((a, b) => query.area ? haversineKm(a, query.area) - haversineKm(b, query.area) : a.code.localeCompare(b.code)).slice(0, 3).map(airport => airport.code);
+  return airports;
+}
+function sampleQueries(query: FlightQuery, start: Date, end: Date): FlightQuery[] {
+  const airports=sampleAirports(query);
   const datePairs = sampleTravelDates(query, start.toISOString().slice(0, 10), end.toISOString().slice(0, 10));
   return datePairs.flatMap((dates, index): FlightQuery[] => {
     const arrivalAirport = airports[index % airports.length];

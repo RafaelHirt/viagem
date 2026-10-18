@@ -31,8 +31,9 @@ Consulte [Publicação e configuração](docs/DEPLOY.md) para as variáveis de f
 ## O que esta primeira versão faz
 
 - Buscar passagens em um único fluxo, definir o alerta durante o preenchimento ou criá-lo depois do resultado, sem repetir a viagem. Os hotéis permanecem indisponíveis enquanto o conector não estiver pronto.
-- Digitar cidade ou região na pergunta **Para onde você quer viajar?**, sem destino predefinido nem mapa obrigatório. Regiões brasileiras como Nordeste usam estados reais; limitar uma região no mapa é opcional.
-- Comparar aeroportos alternativos da mesma cidade na mesma consulta (como Galeão/Santos Dumont e Charles de Gaulle/Orly).
+- Buscar cidade, país ou região na pergunta **Para onde você quer viajar?**, sem destino predefinido nem mapa obrigatório. Cartões visíveis incluem Estados Unidos/Caribe e um diretório reúne todos os países do catálogo. Regiões brasileiras como Nordeste usam estados reais; limitar uma região no mapa é opcional.
+- Comparar aeroportos alternativos da mesma cidade na mesma consulta (como Galeão/Santos Dumont, Charles de Gaulle/Orly, Denver DEN/BJC e Orlando MCO/SFB, com indicação do principal).
+- Ajustar percentual e período da referência nos campos visíveis do alerta; na revisão, **Alterar queda e período** volta diretamente a eles.
 - Ordenar resultados, distinguir horários/escalas, remover duplicações comprovadas e mostrar logos fornecidos pela fonte.
 - Enviar confirmação de cadastro por e-mail quando o transporte estiver configurado, com controle de duplicidade.
 - Encontrar aeroportos digitando cidade ou nome, escolher regiões sugeridas e marcar uma área circular no mapa, sem precisar conhecer códigos ou estimar quilômetros.
@@ -56,6 +57,8 @@ A fonte tem um plano gratuito publicado de 250 consultas por mês, sujeito às c
 Os resultados de passagens desta versão são candidatos: a sequência completa de seleção do retorno e confirmação das opções de compra ainda não está implementada. Portanto não geram alertas de preço confirmado. A exploração flexível direciona o destino ao buscador de promoções e filtra os resultados pelas preferências. Sem resultados compatíveis, consulta até três combinações de datas/aeroportos; pares fixos diferentes podem usar multicidade. Para grupos, a descoberta fornece apenas aeroportos/datas: até três combinações são cotadas novamente no Google Flights com a quantidade solicitada. Respostas e links com passageiros incompatíveis são recusados, e preços antigos do grupo pedem nova consulta. A base por pessoa/total continua desconhecida até validação explícita; os valores não são multiplicados. Continua sendo uma amostra, sem cobertura exaustiva de um ano ou de todos os pares de entrada e saída.
 
 Booking permanece a fonte de hotéis escolhida pelo usuário. O autocomplete pesquisa um índice privado quando houver um catálogo real importado; sem ele, informa que o nome não foi validado e bloqueia a seleção. O acesso de parceiro, a importação do catálogo e o adaptador autenticado de preços continuam pendentes. Não existe consulta de hotel fictícia no lugar dessa integração.
+
+Como alternativa para um piloto pessoal, foi documentado Google Hotels pela SerpApi: pode retornar ofertas de vários vendedores, inclusive Booking, quando presentes na resposta. O adaptador ainda precisa ser implementado e validado; não é a API oficial da Booking e não foi ativado no lugar dela. Ver [caminhos para hotéis](docs/HOTEIS.md).
 
 A coleta agendada começa desativada. E-mail e Telegram têm transportes implementados, mas precisam de credenciais, histórico suficiente e ofertas confirmadas para enviar alertas reais. Nenhuma notificação foi enviada durante a configuração.
 

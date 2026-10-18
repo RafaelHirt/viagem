@@ -43,6 +43,7 @@
 .query-review > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 17px; padding: 16px 0; border-bottom: 1px solid #edf0e8; }
 .query-review dt { font-size: 13px; color: #53665d; }
 .query-review dd { font-size: 12px; color: #41634d; margin: 0; line-height: 1.8; overflow-wrap: anywhere; }
+.query-review .edit-alert-rule { display:flex; width:fit-content; margin-top:8px; padding:4px 0; font-size:13px; text-decoration:underline; text-underline-offset:3px; }
 .wizard-actions { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
 .wizard-error { margin-top: 20px; }
 .query-wizard .button:disabled { cursor: default; }

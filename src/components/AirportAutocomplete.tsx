@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { findAirport, shortAirportLabel, searchAirports } from '../shared/airports';
 import { searchTripCities, tripCityCountry, tripCityName } from '../shared/trip-cities';
 
@@ -11,8 +11,10 @@ export default function AirportAutocomplete({ value, onChange, label, placeholde
   const [text, setText] = useState(value ? displayLabel(value) : '');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
-  useEffect(() => { if (value) setText(displayLabel(value)); }, [value, cityOnly]);
-  const options = cityOnly ? searchTripCities(text) : searchAirports(text,8);
+  const keepTypedOnClear = useRef(false);
+  useEffect(() => { if(!value && keepTypedOnClear.current){keepTypedOnClear.current=false;return} keepTypedOnClear.current=false;setText(value ? displayLabel(value):''); }, [value, cityOnly]);
+  const selected=findAirport(value);
+  const options = cityOnly ? searchTripCities(value ? cityName(value):text) : selected ? [selected,...searchAirports(selected.city,8).filter(airport=>airport.code!==selected.code)].slice(0,8) : searchAirports(text,8);
   function select(code: string) {
     onChange(code); setText(displayLabel(code)); setOpen(false); setActive(-1);
   }
@@ -22,7 +24,7 @@ export default function AirportAutocomplete({ value, onChange, label, placeholde
       <input id={id} role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={`${id}-options`} aria-activedescendant={active >= 0 && options[active] ? `${id}-${active}` : undefined}
         autoComplete="off" placeholder={placeholder} value={text} onFocus={() => setOpen(true)}
         onBlur={() => { setOpen(false); setActive(-1); }}
-        onChange={e => { const next = e.target.value; setText(next); if (value) onChange(''); setOpen(true); setActive(-1); }}
+        onChange={e => { const next = e.target.value; setText(next); if (value) {keepTypedOnClear.current=true;onChange('');} setOpen(true); setActive(-1); }}
         onKeyDown={e => {
           if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setActive(Math.min(active + 1, options.length - 1)); }
           if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(active - 1, 0)); }

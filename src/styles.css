@@ -4823,6 +4823,14 @@ input::placeholder { color: #607268; opacity: 1; }
 .autocomplete-field > label { font-size: 14px; color: #344f42; }
 .alert-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); max-width: none; }
 .alert-fields > .inline-note, .alert-fields > details { grid-column: 1 / -1; }
+.alert-rule-settings { grid-column:1/-1; padding:20px; border:1px solid #bcd0b4; border-radius:10px; background:#f6f9f1; }
+.alert-rule-settings h4 { font-size:17px; color:#244d3b; margin:0 0 9px; }
+.alert-rule-settings > p { font-size:14px; color:#53665d; line-height:1.7; }
+.alert-rule-settings > .field-grid { margin:18px 0; }
+.alert-rule-settings .alert-rule-preview { padding:12px 14px; border-radius:7px; background:#e9f1e2; color:#315d48; }
+.alert-reference-help { font-size:13px; color:#53665d; line-height:1.8; margin-top:15px; }
+.alert-reference-help > summary { cursor:pointer; color:#315d48; }
+.alert-reference-help p { margin-top:12px; }
 @media(max-width:700px) { .alert-fields { grid-template-columns: 1fr; } }
 
 .results-toolbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; padding:16px 0; color:#53665d; font-size:14px; }
